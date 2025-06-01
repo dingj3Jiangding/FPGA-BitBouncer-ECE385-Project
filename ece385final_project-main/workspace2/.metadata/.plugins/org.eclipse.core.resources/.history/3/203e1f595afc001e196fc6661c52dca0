@@ -1,0 +1,34 @@
+#ifndef PLANTS_H
+#define PLANTS_H
+#include "stdint.h"
+#include "map.h"
+
+#define PLANT_HEIGHT 65
+#define PLANT_WIDTH 60
+#define PLANT_OFFSET_X 40
+#define PLANT_OFFSET_X 40
+
+#define PLANT_NONE  0
+
+#define PEA_SHOOTER 1
+#define PEA_SHOOTER_ATK 10
+#define PEA_SHOOTER_HP  100
+#define PEA_SHOOTER_COST 4
+
+#define SUN_FLOWER 2
+#define SUN_FLOWER 50
+#define SUN_FLOWER_COST 2
+
+
+
+
+typedef struct plants {
+	uint8_t plant_type;
+	uint8_t pos_x; // grid position, not pixel position
+	uint8_t pos_y; // grid position, not pixel position
+	uint8_t bullet_x;
+	uint8_t bullet_y;
+}plants_t;
+
+void draw_plant(uint8_t plant_type, uint8_t row, uint8_t col,BRAM_t* hdmi_ctrl);
+#endif

@@ -1,0 +1,6 @@
+#include "game_timer.h"
+#include <xtmrctr.h>
+XTmrCtr game_timer;
+void game_timer_init(void){
+	XTmrCtr_Initialize(&game_timer, u16 DeviceId);
+}

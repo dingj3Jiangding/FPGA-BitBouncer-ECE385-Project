@@ -1,0 +1,274 @@
+#include "map.h"          // Should now have the consistent BRAM_t
+#include "obs.h"          // Should now use the consistent BRAM_t (or guarded)
+#include "game_timer.h"
+#include <stdint.h>
+#include <stdlib.h>       // For rand() and srand()
+#include "player.h"       // For Player_animation struct and player variable
+#include "buff.h"
+
+// === Global Variable Definitions ===
+// Definition for hdmi_ctrl should be in the main C file (e.g., lw_usb_main.c)
+// and declared as extern here if map.c needs to access it directly as a global.
+// For functions that take BRAM_t* as a parameter, this global extern might not be needed
+// if the pointer is always passed.
+extern volatile BRAM_t* hdmi_ctrl;
+
+extern struct Player_animation player;
+
+slot_t lawn_map[SLOT_ROWS][SLOT_COLS];
+
+uint8_t zombie_cnt = 0;
+uint8_t state = 0;      // From base map.c
+uint32_t record_time;   // From base map.c
+uint8_t win_game = 0;
+uint8_t loss_game = 0;
+
+// Keep track of current obstacle positions
+static int current_obstacle_positions[2] = {-1, -1};
+
+uint8_t digit_pix[10][32] = {
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 0
+    {0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99}, // 1
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99}, // 2
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 3
+    {0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99}, // 4
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 5
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 6
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99}, // 7
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 8
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}  // 9
+};
+uint8_t digit_mapping[2] = {BG_WHITE, BG_BLACK};
+
+void init_map(void) {
+    for (uint8_t r = 0; r < SLOT_ROWS; r++) {
+        for (uint8_t c = 0; c < SLOT_COLS; c++) {
+            lawn_map[r][c].plant_type = 0;
+            lawn_map[r][c].remain_hp = 0;
+            lawn_map[r][c].under_attack = 0;
+            lawn_map[r][c].last_action_time = 0;
+            lawn_map[r][c].has_obs = 0;
+        }
+    }
+}
+
+// Simple pseudo random number generator
+static uint32_t simple_rand_seed = 12345;  // Initial seed
+
+uint32_t simple_rand() {
+    simple_rand_seed = simple_rand_seed * 1103515245 + 12345;
+    return (simple_rand_seed / 65536) % 32768;
+}
+
+// Set the random seed
+void set_random_seed(uint32_t seed) {
+    simple_rand_seed = seed;
+}
+
+// Shuffle an array using Fisher-Yates algorithm
+void shuffle_array(int* array, int n) {
+    int i, j, temp;
+    for (i = n - 1; i > 0; i--) {
+        j = simple_rand() % (i + 1);
+        temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+}
+
+// Clear all existing obstacles
+void clear_all_obstacles(BRAM_t* hdmi_ctrl_param) {
+    const int target_row = 2;
+
+    // Clear all slots in the target row
+    for (int c = 0; c < SLOT_COLS; c++) {
+        if (lawn_map[target_row][c].has_obs) {
+            lawn_map[target_row][c].has_obs = 0;
+
+            uint16_t px = c * SLOT_WIDTH + (SLOT_WIDTH - OBS_WIDTH) / 2;
+            uint16_t py = target_row * SLOT_HEIGHT + (SLOT_HEIGHT - OBS_HEIGHT);
+
+            clear_static_obs(px, py, hdmi_ctrl_param);
+        }
+    }
+}
+
+// Initialize obstacles with randomization
+void init_obstacles(BRAM_t* hdmi_ctrl_param) {
+    // Obstacles will be placed only on the second row (index 1, assuming 0-indexed rows)
+    const int target_row = 2;
+
+    // Define the three possible column positions
+    const int all_positions[] = {5, 11, 14};
+    const int total_positions = 3;
+    const int obstacles_to_place = 2;
+
+    // Create an array to hold the shuffled positions
+    int positions[3];
+    for (int i = 0; i < total_positions; i++) {
+        positions[i] = all_positions[i];
+    }
+
+    // Shuffle the positions
+    shuffle_array(positions, total_positions);
+
+    // Place obstacles at the first two positions after shuffling
+    for (int i = 0; i < obstacles_to_place; i++) {
+        int c = positions[i];
+
+        // Update the current obstacle positions tracker
+        current_obstacle_positions[i] = c;
+
+        // Ensure the column is valid
+        if (c < 0 || c >= SLOT_COLS) {
+            continue;
+        }
+
+        lawn_map[target_row][c].has_obs = 1;
+
+        // Calculate pixel position for drawing obstacle within the slot
+        uint16_t px = c * SLOT_WIDTH + (SLOT_WIDTH - OBS_WIDTH) / 2;
+        uint16_t py = target_row * SLOT_HEIGHT + (SLOT_HEIGHT - OBS_HEIGHT);
+
+        draw_static_obs(px, py, hdmi_ctrl_param);
+    }
+}
+
+// Reset obstacles with new random positions
+void reset_obstacles(BRAM_t* hdmi_ctrl_param) {
+    // Clear all existing obstacles first
+    clear_all_obstacles(hdmi_ctrl_param);
+
+    // Generate new random positions and place obstacles
+    init_obstacles(hdmi_ctrl_param);
+}
+
+int check_obstacle_collision(int next_x, int next_y, struct Player_animation* current_player_frame) {
+    // Ensure DINO_WIDTH and DINO_HEIGHT are defined, typically in player.h
+    // If not, provide default values or ensure player.h is included before map.h
+    #ifndef DINO_WIDTH
+    #define DINO_WIDTH 32 // Default if not defined
+    #endif
+    #ifndef DINO_HEIGHT
+    #define DINO_HEIGHT 32 // Default if not defined
+    #endif
+
+    // Screen boundary check
+    if (next_x < 0 || (next_x + DINO_WIDTH) > COLUMNS || next_y < 0 || (next_y + DINO_HEIGHT) > ROWS) {
+        return 1; // Collision with screen boundary
+    }
+
+    int slot_col = next_x / SLOT_WIDTH;
+    int slot_row = next_y / SLOT_HEIGHT;
+
+    if (slot_row < 0 || slot_row >= SLOT_ROWS || slot_col < 0 || slot_col >= SLOT_COLS) {
+        return 0;
+    }
+
+    if (lawn_map[slot_row][slot_col].has_obs) {
+        uint16_t obs_px = slot_col * SLOT_WIDTH + (SLOT_WIDTH - OBS_WIDTH) / 2;
+        uint16_t obs_py = slot_row * SLOT_HEIGHT + (SLOT_HEIGHT - OBS_HEIGHT);
+
+        int player_left = next_x;
+        int player_right = next_x + DINO_WIDTH;
+        int player_top = next_y;
+        int player_bottom = next_y + DINO_HEIGHT;
+
+        int obs_left = obs_px;
+        int obs_right = obs_px + OBS_WIDTH;
+        int obs_top = obs_py;
+        int obs_bottom = obs_py + OBS_HEIGHT;
+
+        int x_overlap = (player_left < obs_right - 10 && player_right > obs_left + 10);
+        int y_overlap = (player_top < obs_bottom && player_bottom > obs_top);
+
+        if (x_overlap && y_overlap) {
+            // Check jumping status using the passed pointer
+            if (current_player_frame != NULL && !current_player_frame->jumping) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+int has_obs_at(int x, int y) {
+    if (x < 0 || x >= COLUMNS || y < 0 || y >= ROWS) return 0;
+    int slot_col = x / SLOT_WIDTH;
+    int slot_row = y / SLOT_HEIGHT;
+
+    if (slot_row < 0 || slot_row >= SLOT_ROWS || slot_col < 0 || slot_col >= SLOT_COLS) {
+        return 0;
+    }
+    return lawn_map[slot_row][slot_col].has_obs;
+}
+
+void update_frame(void) {
+    // draw_player(&player, hdmi_ctrl); // Assuming player.c has draw_player
+                                      // and hdmi_ctrl is the global volatile BRAM_t*
+}
+
+uint8_t check_loss(void) {
+    return loss_game;
+}
+
+uint8_t check_win(void) {
+    return win_game;
+}
+
+// Helper function to get obstacle status for the buff spawn row
+void get_buff_spawn_obstacle_status(bool buff_obstacle_status[MAX_BUFF_SLOTS]) {
+    const int buff_spawn_y_coord = 300; // Y-coordinate where buffs are drawn (their top edge)
+                                       // From buff.c: py = 400;
+    const int buff_icon_height = BUFF_HEIGHT; // From buff.h
+
+    // Determine which row(s) in the main map these Y-coordinates might overlap
+    int map_row_for_buff_top = buff_spawn_y_coord / SLOT_HEIGHT;
+    int map_row_for_buff_bottom = (buff_spawn_y_coord + buff_icon_height - 1) / SLOT_HEIGHT;
+
+    for (int i = 0; i < MAX_BUFF_SLOTS; i++) {
+        buff_obstacle_status[i] = false; // Default to not obstructed
+
+        // Calculate the X-range of the buff icon for buff slot 'i'
+        // From buff.c: px = i * 30 + 7;
+        int buff_icon_x_start = i * 30 + 7; // X-coord of buff icon's left edge
+        int buff_icon_x_end = buff_icon_x_start + BUFF_WIDTH - 1; // X-coord of buff icon's right edge
+
+        // Determine which column(s) in the main map these X-coordinates overlap
+        int map_col_for_buff_start = buff_icon_x_start / SLOT_WIDTH;
+        int map_col_for_buff_end = buff_icon_x_end / SLOT_WIDTH;
+
+        // Check all potentially overlapping map slots for an obstacle
+        for (int r = map_row_for_buff_top; r <= map_row_for_buff_bottom; r++) {
+            if (r < 0 || r >= SLOT_ROWS) continue;
+            for (int c = map_col_for_buff_start; c <= map_col_for_buff_end; c++) {
+                if (c < 0 || c >= SLOT_COLS) continue;
+
+                if (lawn_map[r][c].has_obs) {
+                    // Further check if the obstacle's bounding box actually overlaps the buff icon's bounding box
+                    uint16_t obs_px = c * SLOT_WIDTH + (SLOT_WIDTH - OBS_WIDTH) / 2;
+                    uint16_t obs_py = r * SLOT_HEIGHT + (SLOT_HEIGHT - OBS_HEIGHT);
+
+                    int obs_left = obs_px;
+                    int obs_right = obs_px + OBS_WIDTH;
+                    int obs_top = obs_py;
+                    int obs_bottom = obs_py + OBS_HEIGHT;
+
+                    int buff_left = buff_icon_x_start;
+                    int buff_right = buff_icon_x_end;
+                    int buff_top = buff_spawn_y_coord;
+                    int buff_bottom = buff_spawn_y_coord + buff_icon_height -1;
+
+                    bool x_overlap_buff_obs = (buff_left < obs_right && buff_right > obs_left);
+                    bool y_overlap_buff_obs = (buff_top < obs_bottom && buff_bottom > obs_top);
+
+                    if(x_overlap_buff_obs && y_overlap_buff_obs){
+                        buff_obstacle_status[i] = true;
+                        break;
+                    }
+                }
+            }
+            if (buff_obstacle_status[i]) break;
+        }
+    }
+}

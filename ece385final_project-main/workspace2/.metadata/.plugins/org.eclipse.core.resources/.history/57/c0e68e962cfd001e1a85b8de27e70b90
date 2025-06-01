@@ -1,0 +1,47 @@
+#include "map.h"
+#include "plants.h"
+#include "zombie.h"
+#include "game_timer.h"
+#include <stdint.h>
+
+slot_t lawn_map[32];
+extern pea_bullet_t* pea_map;
+extern zombie_slot_t* zombie_map;
+uint8_t state = 0;
+
+void draw_map(BRAM_t* hdmi_ctrl){
+	for(int i = 0; i < 32; i++){
+		draw_plant(lawn_map[i].plant_type,i/8,i%8,hdmi_ctrl);
+	}
+}
+
+void set_slot(uint8_t row, uint8_t col, uint8_t plant_type, uint8_t hp){
+	lawn_map[row*8+col].plant_type = plant_type;
+	lawn_map[row*8+col].remain_hp = hp;
+}
+
+void update_pos(void){
+	update_pea_pos();
+	update_zombie_pos();
+}
+
+void update_frame(void){
+	switch (state) {
+	case 0:
+	if(game_get_time_ms() > 10000){
+	  generate_zombie();
+	  state = 1;
+	}
+	break;
+	case 1:
+	if(game_get_time_ms() > 20000){
+		generate_zombie();
+		state = 2;
+	}
+	break;
+	default:
+	break;
+	}
+}
+
+void check_

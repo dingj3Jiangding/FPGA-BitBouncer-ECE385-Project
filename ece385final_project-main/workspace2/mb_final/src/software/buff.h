@@ -1,0 +1,49 @@
+#ifndef BUFF_H
+#define BUFF_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "map.h"
+
+#define MAX_BUFF_SLOTS 21
+#define BUFF_PROBABILITY 30
+#define BUFF_WIDTH  16
+#define BUFF_HEIGHT 16
+
+// Buff types
+typedef enum {
+    BUFF_TYPE_NONE = 0,
+    BUFF_TYPE_SPEED_UP,    // Green buff - doubles speed
+    BUFF_TYPE_SPEED_DOWN,  // Red buff - halves speed
+    BUFF_TYPE_ALTERNATE    // Yellow buff - alternating speed
+} BuffType;
+
+// Current player buff state
+typedef struct {
+    BuffType active_buff;
+    uint32_t buff_start_time;
+    uint32_t buff_duration;
+    bool alternate_fast_phase;
+    uint32_t last_phase_change;
+} PlayerBuffState;
+
+// Keep the original buff_slots as bool array to maintain compatibility
+extern bool buff_slots[MAX_BUFF_SLOTS];
+
+// Store buff types separately
+extern BuffType buff_types[MAX_BUFF_SLOTS];
+
+// Global player buff state
+extern PlayerBuffState player_buff_state;
+
+// Function prototypes
+void init_buff_system(void);
+void generate_buffs(const bool slot_has_obs[MAX_BUFF_SLOTS], BRAM_t* hdmi_ctrl);
+bool check_player_collect_buff(int player_x, BRAM_t* hdmi_ctrl);
+void update_buff_state(uint32_t current_time);
+float get_current_speed_multiplier(uint32_t current_time);
+void draw_buff(uint16_t x, uint16_t y, uint8_t color, BRAM_t* hdmi_ctrl);
+void clear_buff(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl);
+BuffType get_random_buff_type(void);
+
+#endif

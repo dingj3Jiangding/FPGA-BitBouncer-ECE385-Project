@@ -1,0 +1,383 @@
+#include "map.h"
+#include "plants.h"
+#include "zombie.h"
+#include "game_timer.h"
+#include <stdint.h>
+
+
+slot_t lawn_map[32];
+extern pea_bullet_t pea_map[4][8];
+extern zombie_slot_t zombie_map[4][3];
+uint8_t state = 0;
+uint8_t state_bullet = 0;
+uint32_t record_time;
+uint8_t loss_game = 0;
+uint8_t total_sun = 0;
+uint8_t is_burnning = 0;
+uint8_t row_burnning = 0;
+uint32_t begin_burn_time = 0;
+uint32_t plant_cost[4] = {PEA_SHOOTER_COST, SUN_FLOWER_COST, NUT_COST, PEPPER_COST};
+
+uint8_t digit_pix[10][32]={
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,
+		0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,
+		0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,
+		0x99,0x99,0x99},
+
+		{0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99},
+
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,
+		0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,
+		0x99,0x99,0x99},
+
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,
+		0x99,0x99,0x99},
+
+		{0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,
+		0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99},
+
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,
+		0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,
+		0x99,0x99,0x99},
+
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,
+		0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,
+		0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,
+		0x99,0x99,0x99},
+
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,
+		0x11,0x11,0x99},
+
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,
+		0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,
+		0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,
+		0x99,0x99,0x99},
+
+		{0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,
+		0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,
+		0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,
+		0x99,0x99,0x99}
+};
+
+uint8_t digit_mapping[2] = {BG_WHITE, BG_BLACK};
+
+void init_map(void){
+	total_sun = INIT_SUN;
+	for(uint8_t i; i < 32; i++){
+		lawn_map[i].plant_type = 0;
+		lawn_map[i].remain_hp = 0;
+		lawn_map[i].under_attack = 0;
+		lawn_map[i].last_action_time = 0;
+	}
+}
+
+void draw_map(BRAM_t* hdmi_ctrl){
+	for(int i = 0; i < 32; i++){
+		draw_plant(lawn_map[i].plant_type,i/8,i%8,hdmi_ctrl);
+	}
+}
+
+void set_slot(uint8_t row, uint8_t col, uint8_t plant_type, uint8_t hp){
+	if(lawn_map[row*8+col].plant_type != 0)	return;
+	lawn_map[row*8+col].plant_type = plant_type;
+	lawn_map[row*8+col].remain_hp = hp;
+	lawn_map[row*8+col].last_action_time = game_get_time_ms();
+	decrease_sun(plant_cost[plant_type-1]);
+}
+
+void delete_slot(uint8_t row, uint8_t col, BRAM_t* hdmi_ctrl){
+	clear_plant(lawn_map[row*8+col].plant_type,row,col,hdmi_ctrl);
+	lawn_map[row*8+col].plant_type = 0;
+	lawn_map[row*8+col].remain_hp = 0;
+	lawn_map[row*8+col].last_action_time = game_get_time_ms();
+
+}
+
+void update_pos(void){
+	update_pea_pos();
+	update_zombie_pos();
+}
+
+void update_frame(void){
+
+	if(game_get_time_ms() - record_time > 8000){
+		record_time = game_get_time_ms();
+		generate_pea_bullet();
+
+	}
+
+
+
+	switch (state) {
+	case 0:
+	if(game_get_time_ms() > 30000){
+		generate_zombie();
+		state = 1;
+	}
+	break;
+	case 1:
+	if(game_get_time_ms() > 70000){
+		generate_zombie();
+		state = 2;
+	}
+	break;
+	case 2:
+	if(game_get_time_ms() > 90000){
+		generate_zombie();
+		generate_zombie();
+		state = 3;
+	}
+	break;
+	case 3:
+	if(game_get_time_ms() > 120000){
+		generate_zombie();
+		state = 4;
+	}
+	break;
+	case 4:
+	if(game_get_time_ms() > 145000){
+		generate_zombie();
+		generate_zombie();
+		state = 5;
+	}
+	break;
+	case 5:
+	if(game_get_time_ms() > 170000){
+		generate_zombie();
+		state = 6;
+	}
+	break;
+	case 6:
+	if(game_get_time_ms() > 180000){
+		generate_zombie();
+		state = 7;
+	}
+	break;
+	case 7:
+	if(game_get_time_ms() > 200000){
+		generate_zombie();
+		state = 8;
+	}
+	break;
+	case 8:
+	if(game_get_time_ms() > 220000){
+		generate_zombie();
+		state = 9;
+	}
+	break;
+	case 9:
+	if(game_get_time_ms() > 260000){
+		generate_zombie();
+		generate_zombie();
+		generate_zombie();
+		generate_zombie();
+		state = 10;
+	}
+	case 9:
+		if(game_get_time_ms() > 260000){
+			generate_zombie();
+			generate_zombie();
+			generate_zombie();
+			generate_zombie();
+			state = 10;
+		}
+	break;
+	default:
+	break;
+	}
+}
+
+
+// TODO: this function needs to be tested
+void check_clear(BRAM_t* hdmi_ctrl){
+
+	// Clear the plant
+	for(uint8_t i = 0; i < 32; i++){
+		if(lawn_map[i].under_attack == 1){
+			lawn_map[i].remain_hp -= ZOMIE_ATK;
+			if(lawn_map[i].remain_hp < 0){
+				clear_plant(lawn_map[i].plant_type, i/8,i%8, hdmi_ctrl);
+				lawn_map[i].plant_type = 0;
+			}
+		}
+	}
+
+	for(uint8_t i=0;i<4;i++){
+		for(uint8_t j=0;j<3;j++){
+			// If zombie not present, find zombie in the next slot
+			if(zombie_map[i][j].is_present==0) continue;
+
+			// If any of the zombie has position less than 10, the player lost the game
+			if(zombie_map[i][j].zombie_inst.pos_x < 10) loss_game = 1;
+
+			for(uint8_t k = 0; k < 8; k++){
+				// No pea present, continue
+				if(pea_map[i][k].is_present==0) continue;
+				if((((int)pea_map[i][k].pos_x-(int)zombie_map[i][j].zombie_inst.pos_x)<25) &&
+					(((int)pea_map[i][k].pos_x-(int)zombie_map[i][j].zombie_inst.pos_x)>-25)){
+					xil_printf("collisiosn!\n");
+					clear_pea(pea_map[i][k].pos_x,pea_map[i][k].pos_y,hdmi_ctrl);
+					pea_map[i][k].is_present = 0;
+					zombie_map[i][j].zombie_inst.hp -= PEA_SHOOTER_ATK;
+ 					// If the zombie's hp is below, kill the zombie
+					if(zombie_map[i][j].zombie_inst.hp<0){
+						zombie_map[i][j].is_present = 0;
+						clear_zombie(&zombie_map[i][j].zombie_inst,hdmi_ctrl);
+					}
+				}
+			}
+		}
+	}
+}
+
+uint8_t check_loss(void){
+	return loss_game;
+}
+
+void generate_pea_bullet(void){
+	for(uint8_t i = 0; i < 4; i++){
+		for(uint8_t j = 0; j < 8; j++){
+			if(lawn_map[8*i+j].plant_type==1 && check_zombie(i)){
+				add_pea(i,j);
+			}
+		}
+	}
+}
+
+void increase_sun(uint8_t value){
+	if(total_sun < 80){
+		total_sun += value;
+		if(total_sun > 79){
+			total_sun = 79;
+		}
+	}
+}
+
+
+// return 1 for dercrease successful, 0 for unsuccessful
+uint8_t can_decrease_sun(uint8_t value){
+	if(value > total_sun){
+		return 0;
+	}else{
+		return 1;
+	}
+
+}
+
+
+uint8_t decrease_sun(uint8_t value){
+		total_sun = total_sun - value;
+}
+
+uint8_t show_sun(void){
+	return total_sun;
+}
+
+uint8_t draw_sun_digit(uint8_t sun_value, BRAM_t* hdmi_ctrl){
+	int show_digits = sun_value * 25;
+	uint8_t value;
+	if(sun_value == 0){
+		value = show_digits % 10;
+		for(uint8_t i = 0; i < 10; i++){
+			for(uint8_t j = 0; j < 3; j++){
+				uint8_t pixel = digit_pix[value][i*3+j];
+				if(pixel != 0) hdmi_ctrl->VRAM[320*(i+DIGIT_OFFSET_Y)+j+DIGIT_OFFSET_X_1/2] = pixel;
+			}
+		}
+	}else if(sun_value < 4){
+		value = show_digits % 10;
+		show_digits /= 10;
+		for(uint8_t i = 0; i < 10; i++){
+			for(uint8_t j = 0; j < 3; j++){
+				uint8_t pixel = digit_pix[value][i*3+j];
+				if(pixel != 0) hdmi_ctrl->VRAM[320*(i+DIGIT_OFFSET_Y)+j+DIGIT_OFFSET_X_2/2] = pixel;
+			}
+		}
+		value = show_digits % 10;
+		for(uint8_t i = 0; i < 10; i++){
+			for(uint8_t j = 0; j < 3; j++){
+				uint8_t pixel = digit_pix[value][i*3+j];
+				if(pixel != 0) hdmi_ctrl->VRAM[320*(i+DIGIT_OFFSET_Y)+j+(DIGIT_OFFSET_X_2 - 8)/2] = pixel;
+			}
+		}
+
+
+	}else{
+		value = show_digits % 10;
+		show_digits /= 10;
+		for(uint8_t i = 0; i < 10; i++){
+			for(uint8_t j = 0; j < 3; j++){
+				uint8_t pixel = digit_pix[value][i*3+j];
+				if(pixel != 0) hdmi_ctrl->VRAM[320*(i+DIGIT_OFFSET_Y)+j+DIGIT_OFFSET_X_3/2] = pixel;
+			}
+		}
+		value = show_digits % 10;
+		show_digits /= 10;
+		for(uint8_t i = 0; i < 10; i++){
+			for(uint8_t j = 0; j < 3; j++){
+				uint8_t pixel = digit_pix[value][i*3+j];
+				if(pixel != 0) hdmi_ctrl->VRAM[320*(i+DIGIT_OFFSET_Y)+j+(DIGIT_OFFSET_X_3 - 8)/2] = pixel;
+			}
+		}
+		value = show_digits % 10;
+		for(uint8_t i = 0; i < 10; i++){
+			for(uint8_t j = 0; j < 3; j++){
+				uint8_t pixel = digit_pix[value][i*3+j];
+				if(pixel != 0) hdmi_ctrl->VRAM[320*(i+DIGIT_OFFSET_Y)+j+(DIGIT_OFFSET_X_3 - 16)/2] = pixel;
+			}
+		}
+
+
+	}
+}
+
+void clear_digit(BRAM_t* hdmi_ctrl){
+	for(uint8_t i = 0; i < 10; i++){
+		for(uint8_t j = 0; j < 30; j++){
+			hdmi_ctrl->VRAM[320*(i+DIGIT_OFFSET_Y)+j+(DIGIT_OFFSET_X_3 - 16)/2] = 0;
+		}
+	}
+}
+
+void update_digit(BRAM_t* hdmi_ctrl){
+	clear_digit(hdmi_ctrl);
+	draw_sun_digit(total_sun,hdmi_ctrl);
+}
+
+
+void pepper_burn(BRAM_t* hdmi_ctrl){
+	for(uint8_t i = 0; i < 32; i++)
+		if(lawn_map[i].plant_type==PEPPER && (game_get_time_ms() - lawn_map[i].last_action_time)>1000){
+			clear_plant(PEPPER, i/8, i%8, hdmi_ctrl);
+			delete_slot(i/8,i%8, hdmi_ctrl);
+
+			for(uint8_t j = 0; j < 3; j++){
+				if(zombie_map[i/8][j].is_present){
+					clear_zombie(&zombie_map[i/8][j].zombie_inst,hdmi_ctrl);
+					zombie_map[i/8][j].is_present = 0;
+				}
+			}
+
+			draw_fire(i/8,hdmi_ctrl);
+			is_burnning = 1;
+			row_burnning = i / 8;
+			begin_burn_time = game_get_time_ms();
+
+
+		}else if(is_burnning && ((game_get_time_ms() - begin_burn_time) > 1000)){
+			is_burnning = 0;
+			clear_fire(row_burnning, hdmi_ctrl);
+
+		}
+}

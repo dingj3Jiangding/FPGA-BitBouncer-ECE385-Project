@@ -1,0 +1,12 @@
+#include "map.h"
+#include <stdint.h>
+slot_t lawn_map[32];
+
+
+typedef void (*drawfun_ptr)();
+
+void draw_map(BRAM_t* hdmi_ctrl){
+	for(int i = 0; i < 32; i++){
+
+	}
+}

@@ -1,0 +1,153 @@
+#include "game_end_font.h"
+
+uint8_t char_table[17][16] = {
+	// A
+	{
+		0x00, 0x00, 0x10, 0x38, 0x6c, 0xc6, 0xc6, 0xfe,
+		0xc6, 0xc6, 0xc6, 0xc6, 0x00, 0x00, 0x00, 0x00
+	},
+	// B
+	{
+		0x00, 0x00, 0xfc, 0x66, 0x66, 0x66, 0x7c, 0x66,
+		0x66, 0x66, 0x66, 0xfc, 0x00, 0x00, 0x00, 0x00
+	},
+	// C
+	{
+		0x00, 0x00, 0x3c, 0x66, 0xc2, 0xc0, 0xc0, 0xc0,
+		0xc0, 0xc2, 0x66, 0x3c, 0x00, 0x00, 0x00, 0x00
+
+	},
+	// E
+	{
+		0x00, 0x00, 0xfe, 0x66, 0x62, 0x68, 0x78, 0x68,
+		0x60, 0x62, 0x66, 0xfe, 0x00, 0x00, 0x00, 0x00
+	},
+	// H
+	{
+		0x00, 0x00, 0xc6, 0xc6, 0xc6, 0xc6, 0xfe, 0xc6,
+		0xc6, 0xc6, 0xc6, 0xc6, 0x00, 0x00, 0x00, 0x00
+	},
+
+	// I
+	{
+		0x00, 0x00, 0x3c, 0x18, 0x18, 0x18, 0x18, 0x18,
+		0x18, 0x18, 0x18, 0x3c, 0x00, 0x00, 0x00, 0x00
+	},
+
+	// M
+	{
+		0x00, 0x00, 0xc3, 0xe7, 0xff, 0xff, 0xdb, 0xc3,
+		0xc3, 0xc3, 0xc3, 0xc3, 0x00, 0x00, 0x00, 0x00
+	},
+	// N
+	{
+		0x00, 0x00, 0xc6, 0xe6, 0xf6, 0xfe, 0xde, 0xce,
+		0xc6, 0xc6, 0xc6, 0xc6, 0x00, 0x00, 0x00, 0x00
+	},
+	// O
+	{
+		0x00, 0x00, 0x7c, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6,
+		0xc6, 0xc6, 0xc6, 0x7c, 0x00, 0x00, 0x00, 0x00
+	},
+	// R
+	{
+		0x00, 0x00, 0xfc, 0x66, 0x66, 0x66, 0x7c, 0x6c,
+		0x66, 0x66, 0x66, 0xe6, 0x00, 0x00, 0x00, 0x00
+	},
+	// S
+	{
+		0x00, 0x00, 0x7c, 0xc6, 0xc6, 0x60, 0x38, 0x0c,
+		0x06, 0xc6, 0xc6, 0x7c, 0x00, 0x00, 0x00, 0x00
+	},
+	// T
+	{
+		0x00, 0x00, 0xff, 0xdb, 0x99, 0x18, 0x18, 0x18,
+		0x18, 0x18, 0x18, 0x3c, 0x00, 0x00, 0x00, 0x00
+	},
+	// U
+	{
+		0x00, 0x00, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6,
+		0xc6, 0xc6, 0xc6, 0x7c, 0x00, 0x00, 0x00, 0x00
+	},
+	// V
+	{
+		0x00, 0x00, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3, 0xc3,
+		0xc3, 0x66, 0x3c, 0x18, 0x00, 0x00, 0x00, 0x00
+	},
+	// Y
+	{
+		0x00, 0x00, 0xc3, 0xc3, 0xc3, 0x66, 0x3c, 0x18,
+		0x18, 0x18, 0x18, 0x3c, 0x00, 0x00, 0x00, 0x00
+
+	},
+	// Z
+	{
+		0x00, 0x00, 0xff, 0xc3, 0x86, 0x0c, 0x18, 0x30,
+		0x60, 0xc1, 0xc3, 0xff, 0x00, 0x00, 0x00, 0x00
+	},
+	// surprise
+	{
+		0x00, 0x00, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18,
+		0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00
+	}
+};
+
+void draw_chrarcter(uint16_t x, uint16_t y, uint8_t char_id, BRAM_t* hdmi_ctrl){
+	x = x/2;
+	for(int i = 0; i < FONT_HEIGHT; i++){
+		for(int j = 0; j < FONT_WIDTH; j++){
+			if(char_table[char_id][i] & (0x80 >> j)){
+				hdmi_ctrl->VRAM[320*(y + i*4) + (x + j*2)] = FONT_COLOR;
+				hdmi_ctrl->VRAM[320*(y + i*4) + (x + j*2+1)] = FONT_COLOR;
+				hdmi_ctrl->VRAM[320*(y + i*4+1) + (x + j*2)] = FONT_COLOR;
+				hdmi_ctrl->VRAM[320*(y + i*4+1) + (x + j*2+1)] = FONT_COLOR;
+				hdmi_ctrl->VRAM[320*(y + i*4+2) + (x + j*2)] = FONT_COLOR;
+				hdmi_ctrl->VRAM[320*(y + i*4+2) + (x + j*2+1)] = FONT_COLOR;
+				hdmi_ctrl->VRAM[320*(y + i*4+3) + (x + j*2)] = FONT_COLOR;
+				hdmi_ctrl->VRAM[320*(y + i*4+3) + (x + j*2+1)] = FONT_COLOR;
+			}
+		}
+	}
+}
+
+void draw_game_loss(BRAM_t* hdmi_ctrl){
+	draw_chrarcter(GAME_LOSS_OFFSET_X, GAME_LOSS_OFFSET_Y, CHAR_T, hdmi_ctrl);   			 		// T
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH, GAME_LOSS_OFFSET_Y, CHAR_H, hdmi_ctrl); 	    // H
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 2, GAME_LOSS_OFFSET_Y, CHAR_E, hdmi_ctrl);     // E
+
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 4, GAME_LOSS_OFFSET_Y, CHAR_Z, hdmi_ctrl);     // Z
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 5, GAME_LOSS_OFFSET_Y, CHAR_O, hdmi_ctrl);     // O
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 6, GAME_LOSS_OFFSET_Y, CHAR_M, hdmi_ctrl);     // M
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 7, GAME_LOSS_OFFSET_Y, CHAR_B, hdmi_ctrl);     // B
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 8, GAME_LOSS_OFFSET_Y, CHAR_I, hdmi_ctrl);     // I
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 9, GAME_LOSS_OFFSET_Y, CHAR_E, hdmi_ctrl);     // E
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 10, GAME_LOSS_OFFSET_Y, CHAR_S, hdmi_ctrl);     // S
+
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT, CHAR_A, hdmi_ctrl);     			  // A
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 2, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT, CHAR_T, hdmi_ctrl);     // T
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 3, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT, CHAR_E, hdmi_ctrl);     // E
+
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 5, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT, CHAR_Y, hdmi_ctrl);     // Y
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 6, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT, CHAR_O, hdmi_ctrl);     // O
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 7, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT, CHAR_U, hdmi_ctrl);     // U
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 8, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT, CHAR_R, hdmi_ctrl);     // R
+
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 2, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT*2, CHAR_B, hdmi_ctrl);     // B
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 3, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT*2, CHAR_R, hdmi_ctrl);     // R
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 4, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT*2, CHAR_A, hdmi_ctrl);     // A
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 5, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT*2, CHAR_I, hdmi_ctrl);     // I
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 6, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT*2, CHAR_N, hdmi_ctrl);		// N
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 7, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT*2, CHAR_S, hdmi_ctrl);		// S
+	draw_chrarcter(GAME_LOSS_OFFSET_X + CHAR_WIDTH * 8, GAME_LOSS_OFFSET_Y + CHAR_HEIGHT*2, CHAR_SUPRISE, hdmi_ctrl);		// !
+}
+
+//void draw_game_win(BRAM_t* hdmi_ctrl){
+//	draw_chrarcter(GAME_WIN_OFFSET_X, GAME_WIN_OFFSET_Y, CHAR_V, hdmi_ctrl);   			 		// V
+//	draw_chrarcter(GAME_WIN_OFFSET_X + CHAR_WIDTH, GAME_WIN_OFFSET_Y, CHAR_I, hdmi_ctrl); 	    // I
+//	draw_chrarcter(GAME_WIN_OFFSET_X + CHAR_WIDTH * 2, GAME_WIN_OFFSET_Y, CHAR_C, hdmi_ctrl);     // C
+//	draw_chrarcter(GAME_WIN_OFFSET_X + CHAR_WIDTH * 3, GAME_WIN_OFFSET_Y, CHAR_T, hdmi_ctrl);  	// T
+//	draw_chrarcter(GAME_WIN_OFFSET_X + CHAR_WIDTH * 4, GAME_WIN_OFFSET_Y, CHAR_O, hdmi_ctrl); 	// O
+//	draw_chrarcter(GAME_WIN_OFFSET_X + CHAR_WIDTH * 5, GAME_WIN_OFFSET_Y, CHAR_R, hdmi_ctrl);     // R
+//	draw_chrarcter(GAME_WIN_OFFSET_X + CHAR_WIDTH * 6, GAME_WIN_OFFSET_Y, CHAR_Y, hdmi_ctrl);     // Y
+//	draw_chrarcter(GAME_WIN_OFFSET_X + CHAR_WIDTH * 7, GAME_WIN_OFFSET_Y, CHAR_SUPRISE, hdmi_ctrl);  // !
+//}

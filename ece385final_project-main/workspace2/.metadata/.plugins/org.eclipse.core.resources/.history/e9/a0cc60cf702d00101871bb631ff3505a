@@ -1,0 +1,202 @@
+#include "buff.h"
+#include "map.h"
+#include <stdint.h>
+
+// Global buff arrays
+BuffSlot buff_slots[MAX_BUFF_SLOTS] = {0};
+PlayerBuffState player_buff_state = {0};
+
+// Original heart-shaped buff sprite (used as base)
+static const uint8_t buff_img[BUFF_WIDTH * BUFF_HEIGHT] = {
+    0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,
+    0,0,1,1,1,1,0,0,0,0,1,1,1,1,0,0,
+    0,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+    0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+    0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,
+    0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,
+    0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,
+    0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0
+};
+
+// Buff colors
+#define COLOR_SPEED_UP   0x08  // Green
+#define COLOR_SPEED_DOWN 0x07  // Red
+#define COLOR_ALTERNATE  0x05  // Yellow
+
+// Buff durations (in milliseconds)
+#define SPEED_UP_DURATION    2000
+#define SPEED_DOWN_DURATION  2000
+#define ALTERNATE_DURATION   2000
+
+// Initialize buff system
+void init_buff_system(void) {
+    for (int i = 0; i < MAX_BUFF_SLOTS; i++) {
+        buff_slots[i].active = false;
+        buff_slots[i].type = BUFF_TYPE_NONE;
+        buff_slots[i].spawn_time = 0;
+    }
+
+    player_buff_state.active_buff = BUFF_TYPE_NONE;
+    player_buff_state.buff_start_time = 0;
+    player_buff_state.buff_duration = 0;
+    player_buff_state.alternate_fast_phase = false;
+    player_buff_state.last_phase_change = 0;
+}
+
+// Get a random buff type
+BuffType get_random_buff_type(void) {
+    int random = rand() % 3;
+    switch (random) {
+        case 0: return BUFF_TYPE_SPEED_UP;
+        case 1: return BUFF_TYPE_SPEED_DOWN;
+        case 2: return BUFF_TYPE_ALTERNATE;
+        default: return BUFF_TYPE_SPEED_UP;
+    }
+}
+
+// Draw buff with specific color based on type
+void draw_buff(uint16_t x, uint16_t y, BuffType type, BRAM_t* hdmi_ctrl) {
+    uint8_t color;
+
+    // Choose color based on buff type
+    switch (type) {
+        case BUFF_TYPE_SPEED_UP:
+            color = COLOR_SPEED_UP;
+            break;
+        case BUFF_TYPE_SPEED_DOWN:
+            color = COLOR_SPEED_DOWN;
+            break;
+        case BUFF_TYPE_ALTERNATE:
+            color = COLOR_ALTERNATE;
+            break;
+        default:
+            color = COLOR_SPEED_UP;
+    }
+
+    // Draw the buff sprite
+    for (uint16_t j = 0; j < BUFF_HEIGHT; j++) {
+        for (uint16_t i = 0; i < BUFF_WIDTH; i++) {
+            uint8_t pixel = buff_img[j * BUFF_WIDTH + i];
+            if (pixel != 0) {
+                draw_pixel(x + i, y + j, color, hdmi_ctrl);
+            }
+        }
+    }
+}
+
+// Clear buff at position
+void clear_buff(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl) {
+    for (uint16_t j = 0; j < BUFF_HEIGHT; j++) {
+        for (uint16_t i = 0; i < BUFF_WIDTH; i++) {
+            uint8_t pixel = buff_img[j * BUFF_WIDTH + i];
+            if (pixel != 0) {
+                draw_pixel(x + i, y + j, 0, hdmi_ctrl);
+            }
+        }
+    }
+}
+
+// Generate buffs at random positions
+void generate_buffs(const bool slot_has_obs[MAX_BUFF_SLOTS], BRAM_t* hdmi_ctrl) {
+    for (int i = 0; i < MAX_BUFF_SLOTS; i++) {
+        if (!slot_has_obs[i] && (rand() % BUFF_PROBABILITY == 0)) {
+            buff_slots[i].active = true;
+            buff_slots[i].type = get_random_buff_type();
+            buff_slots[i].spawn_time = 0; // Set this to current time if needed
+
+            uint16_t px = i * 30 + 7;
+            uint16_t py = 330;
+            draw_buff(px, py, buff_slots[i].type, hdmi_ctrl);
+        } else {
+            buff_slots[i].active = false;
+            buff_slots[i].type = BUFF_TYPE_NONE;
+        }
+    }
+}
+
+// Check if player collects a buff
+bool check_player_collect_buff(int player_x, BRAM_t* hdmi_ctrl) {
+    int slot_index = player_x / 30;
+    if (slot_index < 0 || slot_index >= MAX_BUFF_SLOTS) return false;
+
+    if (buff_slots[slot_index].active) {
+        // Save buff type before clearing
+        BuffType collected_type = buff_slots[slot_index].type;
+
+        // Clear the buff
+        buff_slots[slot_index].active = false;
+        uint16_t px = slot_index * 30 + 7;
+        uint16_t py = 330;
+        clear_buff(px, py, hdmi_ctrl);
+
+        // Apply buff to player
+        player_buff_state.active_buff = collected_type;
+        player_buff_state.buff_start_time = game_get_time_ms();
+
+        // Set duration based on buff type
+        switch (collected_type) {
+            case BUFF_TYPE_SPEED_UP:
+                player_buff_state.buff_duration = SPEED_UP_DURATION;
+                break;
+            case BUFF_TYPE_SPEED_DOWN:
+                player_buff_state.buff_duration = SPEED_DOWN_DURATION;
+                break;
+            case BUFF_TYPE_ALTERNATE:
+                player_buff_state.buff_duration = ALTERNATE_DURATION;
+                player_buff_state.alternate_fast_phase = false;
+                player_buff_state.last_phase_change = game_get_time_ms();
+                break;
+            default:
+                player_buff_state.buff_duration = 0;
+        }
+
+        return true;
+    }
+    return false;
+}
+
+// Update buff state
+void update_buff_state(uint32_t current_time) {
+    if (player_buff_state.active_buff == BUFF_TYPE_NONE) return;
+
+    // Check if buff has expired
+    if (current_time >= player_buff_state.buff_start_time + player_buff_state.buff_duration) {
+        player_buff_state.active_buff = BUFF_TYPE_NONE;
+        return;
+    }
+
+    // Handle alternating speed buff
+    if (player_buff_state.active_buff == BUFF_TYPE_ALTERNATE) {
+        uint32_t time_since_change = current_time - player_buff_state.last_phase_change;
+
+        if (time_since_change >= 500) { // Switch every 500ms
+            player_buff_state.alternate_fast_phase = !player_buff_state.alternate_fast_phase;
+            player_buff_state.last_phase_change = current_time;
+        }
+    }
+}
+
+// Get current speed multiplier based on active buff
+float get_current_speed_multiplier(uint32_t current_time) {
+    // First update buff state
+    update_buff_state(current_time);
+
+    switch (player_buff_state.active_buff) {
+        case BUFF_TYPE_SPEED_UP:
+            return 2.0f;
+        case BUFF_TYPE_SPEED_DOWN:
+            return 0.5f;
+        case BUFF_TYPE_ALTERNATE:
+            return player_buff_state.alternate_fast_phase ? 2.0f : 1.0f;
+        default:
+            return 1.0f;
+    }
+}

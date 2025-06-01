@@ -1,0 +1,16 @@
+#include "rand.h"
+
+uint32_t a=1103515245;
+uint32_t c = 12345;
+	static uint32_t m = 4;
+	static uint32_t seed = 123456789;
+
+uint32_t random_number(){
+	static
+    seed = (a * seed + c) % m;
+    return seed;
+}
+
+uint32_t random_row(){
+
+}

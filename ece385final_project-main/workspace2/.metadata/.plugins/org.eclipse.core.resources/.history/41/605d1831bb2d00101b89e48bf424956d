@@ -1,0 +1,225 @@
+#include "buff.h"
+#include <stdlib.h>
+
+// Global buff arrays - maintain original structure
+bool buff_slots[MAX_BUFF_SLOTS] = {false};
+BuffType buff_types[MAX_BUFF_SLOTS] = {BUFF_TYPE_NONE};
+PlayerBuffState player_buff_state = {0};
+
+// Original heart-shaped buff sprite (used as base)
+static const uint8_t buff_img[BUFF_WIDTH * BUFF_HEIGHT] = {
+    0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,
+    0,0,1,1,1,1,0,0,0,0,1,1,1,1,0,0,
+    0,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+    0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+    0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,
+    0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,
+    0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,
+    0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0
+};
+
+// Helper function to draw a pixel (already exists, just adding for completeness)
+static void draw_pixel(uint16_t x, uint16_t y, uint8_t color, BRAM_t* hdmi_ctrl) {
+    if (x >= COLUMNS || y >= ROWS) return;
+
+    // Calculate byte position (each byte contains two pixels)
+    uint32_t byte_pos = y * (COLUMNS / 2) + (x / 2);
+    uint8_t old = hdmi_ctrl->VRAM[byte_pos];
+
+    // Determine which pixel in the byte (left or right)
+    if (x % 2 == 0) {
+        // Left pixel (upper 4 bits)
+        old = (old & 0x0F) | (color << 4);
+    } else {
+        // Right pixel (lower 4 bits)
+        old = (old & 0xF0) | (color & 0x0F);
+    }
+    hdmi_ctrl->VRAM[byte_pos] = old;
+}
+
+// Buff colors
+#define COLOR_SPEED_UP   0x05  // Green
+#define COLOR_SPEED_DOWN 0x07  // Red
+#define COLOR_ALTERNATE  0x0E  // Yellow
+
+// Buff durations (in milliseconds)
+#define SPEED_UP_DURATION    2000  // 2 seconds
+#define SPEED_DOWN_DURATION  3000  // 3 seconds
+#define ALTERNATE_DURATION   5000  // 5 seconds
+
+// Initialize buff system
+void init_buff_system(void) {
+    for (int i = 0; i < MAX_BUFF_SLOTS; i++) {
+        buff_slots[i] = false;
+        buff_types[i] = BUFF_TYPE_NONE;
+    }
+
+    player_buff_state.active_buff = BUFF_TYPE_NONE;
+    player_buff_state.buff_start_time = 0;
+    player_buff_state.buff_duration = 0;
+    player_buff_state.alternate_fast_phase = false;
+    player_buff_state.last_phase_change = 0;
+}
+
+// Get a random buff type
+BuffType get_random_buff_type(void) {
+    int random = rand() % 3;
+    switch (random) {
+        case 0: return BUFF_TYPE_SPEED_UP;
+        case 1: return BUFF_TYPE_SPEED_DOWN;
+        case 2: return BUFF_TYPE_ALTERNATE;
+        default: return BUFF_TYPE_SPEED_UP;
+    }
+}
+
+// Draw buff (original function signature maintained)
+void draw_buff(uint16_t x, uint16_t y, uint8_t color, BRAM_t* hdmi_ctrl) {
+    for (uint16_t j = 0; j < BUFF_HEIGHT; j++) {
+        for (uint16_t i = 0; i < BUFF_WIDTH; i++) {
+            uint8_t pixel = buff_img[j * BUFF_WIDTH + i];
+            if (pixel != 0) {
+                draw_pixel(x + i, y + j, color, hdmi_ctrl);
+            }
+        }
+    }
+}
+
+// Helper function to draw buff with specific type
+static void draw_buff_with_type(uint16_t x, uint16_t y, BuffType type, BRAM_t* hdmi_ctrl) {
+    uint8_t color;
+
+    // Choose color based on buff type
+    switch (type) {
+        case BUFF_TYPE_SPEED_UP:
+            color = COLOR_SPEED_UP;
+            break;
+        case BUFF_TYPE_SPEED_DOWN:
+            color = COLOR_SPEED_DOWN;
+            break;
+        case BUFF_TYPE_ALTERNATE:
+            color = COLOR_ALTERNATE;
+            break;
+        default:
+            color = COLOR_SPEED_UP;
+    }
+
+    draw_buff(x, y, color, hdmi_ctrl);
+}
+
+// Clear buff at position
+void clear_buff(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl) {
+    for (uint16_t j = 0; j < BUFF_HEIGHT; j++) {
+        for (uint16_t i = 0; i < BUFF_WIDTH; i++) {
+            uint8_t pixel = buff_img[j * BUFF_WIDTH + i];
+            if (pixel != 0) {
+                draw_pixel(x + i, y + j, 0, hdmi_ctrl);
+            }
+        }
+    }
+}
+
+// Generate buffs at random positions
+void generate_buffs(const bool slot_has_obs[MAX_BUFF_SLOTS], BRAM_t* hdmi_ctrl) {
+    for (int i = 0; i < MAX_BUFF_SLOTS; i++) {
+        if (!slot_has_obs[i] && (rand() % BUFF_PROBABILITY == 0)) {
+            buff_slots[i] = true;
+            buff_types[i] = get_random_buff_type();
+
+            uint16_t px = i * 30 + 7;
+            uint16_t py = 330;
+            draw_buff_with_type(px, py, buff_types[i], hdmi_ctrl);
+        } else {
+            buff_slots[i] = false;
+            buff_types[i] = BUFF_TYPE_NONE;
+        }
+    }
+}
+
+// Check if player collects a buff
+bool check_player_collect_buff(int player_x, BRAM_t* hdmi_ctrl) {
+    int slot_index = player_x / 30;
+    if (slot_index < 0 || slot_index >= MAX_BUFF_SLOTS) return false;
+
+    if (buff_slots[slot_index]) {
+        // Save buff type before clearing
+        BuffType collected_type = buff_types[slot_index];
+
+        // Clear the buff
+        buff_slots[slot_index] = false;
+        buff_types[slot_index] = BUFF_TYPE_NONE;
+
+        uint16_t px = slot_index * 30 + 7;
+        uint16_t py = 330;
+        clear_buff(px, py, hdmi_ctrl);
+
+        // Apply buff to player
+        player_buff_state.active_buff = collected_type;
+        player_buff_state.buff_start_time = game_get_time_ms();
+
+        // Set duration based on buff type
+        switch (collected_type) {
+            case BUFF_TYPE_SPEED_UP:
+                player_buff_state.buff_duration = SPEED_UP_DURATION;
+                break;
+            case BUFF_TYPE_SPEED_DOWN:
+                player_buff_state.buff_duration = SPEED_DOWN_DURATION;
+                break;
+            case BUFF_TYPE_ALTERNATE:
+                player_buff_state.buff_duration = ALTERNATE_DURATION;
+                player_buff_state.alternate_fast_phase = false;
+                player_buff_state.last_phase_change = game_get_time_ms();
+                break;
+            default:
+                player_buff_state.buff_duration = 0;
+        }
+
+        return true;
+    }
+    return false;
+}
+
+// Update buff state
+void update_buff_state(uint32_t current_time) {
+    if (player_buff_state.active_buff == BUFF_TYPE_NONE) return;
+
+    // Check if buff has expired
+    if (current_time >= player_buff_state.buff_start_time + player_buff_state.buff_duration) {
+        player_buff_state.active_buff = BUFF_TYPE_NONE;
+        return;
+    }
+
+    // Handle alternating speed buff
+    if (player_buff_state.active_buff == BUFF_TYPE_ALTERNATE) {
+        uint32_t time_since_change = current_time - player_buff_state.last_phase_change;
+
+        if (time_since_change >= 500) { // Switch every 500ms
+            player_buff_state.alternate_fast_phase = !player_buff_state.alternate_fast_phase;
+            player_buff_state.last_phase_change = current_time;
+        }
+    }
+}
+
+// Get current speed multiplier based on active buff
+float get_current_speed_multiplier(uint32_t current_time) {
+    // First update buff state
+    update_buff_state(current_time);
+
+    switch (player_buff_state.active_buff) {
+        case BUFF_TYPE_SPEED_UP:
+            return 2.0f;
+        case BUFF_TYPE_SPEED_DOWN:
+            return 0.5f;
+        case BUFF_TYPE_ALTERNATE:
+            return player_buff_state.alternate_fast_phase ? 2.0f : 1.0f;
+        default:
+            return 1.0f;
+    }
+}

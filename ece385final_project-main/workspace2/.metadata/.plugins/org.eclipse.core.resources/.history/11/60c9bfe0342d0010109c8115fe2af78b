@@ -1,0 +1,219 @@
+#include "map.h"
+#include "obs.h"          // <-- Added for draw_static_obs
+#include "game_timer.h"
+#include <stdint.h>
+#include "player.h"       // For Player_animation struct and player variable
+
+// === Global Variable Definitions ===
+extern volatile BRAM_t* hdmi_ctrl; // Already declared as extern, definition is elsewhere (e.g. lw_usb_main.c)
+
+// Player extern declaration (if map.c directly uses it for collision)
+// This was present in both your base map.c and software/map.c
+extern struct Player_animation player;
+
+// Map data
+slot_t lawn_map[SLOT_ROWS][SLOT_COLS];
+
+// Game state variables
+uint8_t zombie_cnt = 0; // Initialized, was extern in base, now defined here if this is main map logic
+uint8_t state = 0;      // From base map.c
+uint32_t record_time;   // From base map.c
+uint8_t win_game = 0;
+uint8_t loss_game = 0;
+
+
+// Digit drawing data (from base map.c)
+uint8_t digit_pix[10][32] = {
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 0
+    {0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99}, // 1
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99}, // 2
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 3
+    {0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99}, // 4
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 5
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 6
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x11,0x11,0x99}, // 7
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}, // 8
+    {0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x99,0x99,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99,0x11,0x11,0x99,0x11,0x11,0x99,0x99,0x99,0x99,0x99,0x99,0x99}  // 9
+};
+uint8_t digit_mapping[2] = {BG_WHITE, BG_BLACK}; // From base map.c
+
+// === Function Implementations ===
+
+// Initialize map (plants and obstacles)
+void init_map(void) {
+    for (uint8_t r = 0; r < SLOT_ROWS; r++) {
+        for (uint8_t c = 0; c < SLOT_COLS; c++) {
+            lawn_map[r][c].plant_type = 0;
+            lawn_map[r][c].remain_hp = 0;
+            lawn_map[r][c].under_attack = 0;
+            lawn_map[r][c].last_action_time = 0;
+            lawn_map[r][c].has_obs = 0; // Initialize static obstacle flag
+        }
+    }
+    // Note: init_obstacles() should be called separately after init_map()
+    // typically from your main game initialization logic, passing hdmi_ctrl.
+}
+
+// Initialize static obstacles (from software/map.c)
+// This function draws obstacles once.
+void init_obstacles(BRAM_t* hdmi_ctrl_ptr) { // Renamed parameter to avoid conflict if hdmi_ctrl is also global
+    // Obstacles are placed in rows corresponding to y from 120 to 360 (exclusive of 360 for top coord)
+    // With SLOT_HEIGHT = 120:
+    // Row 0: y = 0 to 119
+    // Row 1: y = 120 to 239
+    // Row 2: y = 240 to 359
+    // Row 3: y = 360 to 479
+    // So, obstacles in rows 1 and 2.
+    int row_start = 120 / SLOT_HEIGHT; // Should be 1 with SLOT_HEIGHT = 120
+    int row_end = (360 / SLOT_HEIGHT) -1 ; // Should be 2 (up to, but not including row starting at 360)
+                                       // The original code was row <= row_end (360/120 = 3), so it included row 3.
+                                       // Let's stick to original logic: place in rows 1, 2, 3.
+                                       // Original: y ¡Ê [120, 360], implies row 1, 2. If 360 is inclusive for start of slot, then row 3 too.
+                                       // The comment says "y ¡Ê [120, 360] µÄÐÐ£¨row = 1~3£©"
+                                       // If SLOT_HEIGHT = 120: row 1 (120-239), row 2 (240-359), row 3 (360-479)
+                                       // So it means rows 1 and 2. Let's assume the comment "row = 1~3" is based on a 1-indexed user view.
+                                       // With 0-indexed array, row_start = 1, row_end = 2.
+    row_start = 1; // Corresponds to y=120
+    row_end = 2;   // Corresponds to y=240 (up to 359)
+
+    for (int r = row_start; r <= row_end; r++) {
+        for (int c = 0; c < SLOT_COLS; c++) {
+            lawn_map[r][c].has_obs = 1;
+
+            // Calculate pixel position for drawing obstacle within the slot
+            // (bottom-middle of slot as per original software/map.c)
+            uint16_t px = c * SLOT_WIDTH + (SLOT_WIDTH - OBS_WIDTH) / 2;
+            uint16_t py = r * SLOT_HEIGHT + (SLOT_HEIGHT - OBS_HEIGHT); // Positioned at the bottom of the slot
+
+            draw_static_obs(px, py, hdmi_ctrl_ptr);
+        }
+    }
+}
+
+
+// Draw current map state (plants)
+// NOTE: Assumes draw_plant function is defined elsewhere.
+// Static obstacles are drawn by init_obstacles. If they can be removed/changed,
+// this function might need to redraw them or handle their absence.
+void draw_map(BRAM_t* hdmi_ctrl_ptr) { // Renamed parameter
+    for (uint8_t r = 0; r < SLOT_ROWS; r++) {
+        for (uint8_t c = 0; c < SLOT_COLS; c++) {
+            // If you have a function to clear a slot before drawing:
+            // clear_slot_visual(r, c, hdmi_ctrl_ptr);
+
+            if (lawn_map[r][c].plant_type != 0) {
+                // draw_plant(lawn_map[r][c].plant_type, r, c, hdmi_ctrl_ptr); // Your existing function
+            }
+            // Static obstacles are already drawn by init_obstacles.
+            // If they need to be redrawn (e.g., if plants can be drawn over them and clear parts),
+            // you might need to call draw_static_obs here for slots with lawn_map[r][c].has_obs == 1
+            // AFTER clearing the slot or drawing the plant.
+            // For now, assuming static obstacles are drawn once underneath.
+        }
+    }
+}
+
+// Example: Player-centric collision with static obstacles (from software/map.c)
+// This uses the global 'player' variable.
+int check_obstacle_collision(int next_x, int next_y) {
+    // Screen boundary check
+    if (next_x < 0 || next_x >= COLUMNS || next_y < 0 || next_y >= ROWS) {
+        return 1; // Collision with boundary
+    }
+
+    int slot_col = next_x / SLOT_WIDTH;
+    int slot_row = next_y / SLOT_HEIGHT;
+
+    // Check if calculated slot is out of map bounds (should not happen if next_x/y are within COLUMNS/ROWS)
+    if (slot_row < 0 || slot_row >= SLOT_ROWS || slot_col < 0 || slot_col >= SLOT_COLS) {
+        return 1; // Effectively a boundary collision for slot calculation
+    }
+
+    // Check collision with an obstacle in the slot, if player is not jumping
+    // This logic is specific to how the player (dinosaur) interacts with these obstacles.
+    if (lawn_map[slot_row][slot_col].has_obs) {
+        // If there's an obstacle, check if player's Y collides with the obstacle's visual height
+        // Assuming player has a 'height' (e.g. DINO_HEIGHT) and next_y is player's top y.
+        // Obstacle is at the bottom of the slot.
+        int obs_visual_top_y = slot_row * SLOT_HEIGHT + (SLOT_HEIGHT - OBS_HEIGHT);
+
+        // Simple collision: if player's y range overlaps with obstacle's y range in this slot
+        // This needs player's height (e.g. DINO_HEIGHT from player.h)
+        // Let's assume next_y is the player's top coordinate.
+        int player_bottom_y = next_y + DINO_HEIGHT; // Requires DINO_HEIGHT from player.h
+
+        if (!player.jumping) { // Only collide if not jumping over
+             if ( ( (next_y >= obs_visual_top_y && next_y < (obs_visual_top_y + OBS_HEIGHT) ) || // Player top hits obs
+                    (player_bottom_y > obs_visual_top_y && player_bottom_y <= (obs_visual_top_y + OBS_HEIGHT)) ) && // Player bottom hits obs
+                  (next_x + DINO_WIDTH > slot_col * SLOT_WIDTH && next_x < (slot_col+1) * SLOT_WIDTH) // Player X overlaps slot
+                ) {
+                // player.alive = 0; // Example action on collision
+                return 1; // Collision
+            }
+        }
+    }
+    return 0; // No collision
+}
+
+// Query if a specific map coordinate (pixel) is part of a slot with an obstacle (from software/map.c)
+int has_obs_at(int x, int y) {
+    if (x < 0 || x >= COLUMNS || y < 0 || y >= ROWS) return 0;
+
+    int slot_col = x / SLOT_WIDTH;
+    int slot_row = y / SLOT_HEIGHT;
+
+    if (slot_row < 0 || slot_row >= SLOT_ROWS || slot_col < 0 || slot_col >= SLOT_COLS) {
+        return 0;
+    }
+    return lawn_map[slot_row][slot_col].has_obs;
+}
+
+
+// --- Functions from your base map.c (adapted for 2D map where necessary) ---
+
+// Update frame - draws the player (from base map.c)
+// This seems very minimal for a PvZ game's update_frame.
+// Typically, update_frame would handle zombie movement, plant actions, bullets, etc.
+void update_frame(void) {
+    // draw_player(&player, hdmi_ctrl); // hdmi_ctrl is global in this file
+                                      // If hdmi_ctrl is not global, it should be passed.
+                                      // Assuming player struct needs a BRAM_t* to draw.
+                                      // The actual draw_player is in player.c
+}
+
+uint8_t check_loss(void) {
+    return loss_game;
+}
+
+uint8_t check_win(void) {
+    return win_game;
+}
+
+// Placeholder for set_slot, assuming you have plant drawing logic elsewhere
+// The hp parameter in base map.h was uint8_t, slot_t.remain_hp is int16_t. Changed to int16_t.
+void set_slot(uint8_t row, uint8_t col, uint8_t plant_type, int16_t hp) {
+    if (row < SLOT_ROWS && col < SLOT_COLS) {
+        if (!lawn_map[row][col].has_obs) { // Cannot plant on a static obstacle
+            lawn_map[row][col].plant_type = plant_type;
+            lawn_map[row][col].remain_hp = hp;
+            lawn_map[row][col].under_attack = 0;
+            lawn_map[row][col].last_action_time = game_get_time_ms(); // Assuming game_timer.h provides this
+            // Call drawing function for the plant
+            // draw_plant(plant_type, row, col, hdmi_ctrl);
+        }
+    }
+}
+
+// Placeholder for delete_slot
+void delete_slot(uint8_t row, uint8_t col, BRAM_t* hdmi_ctrl_ptr) {
+    if (row < SLOT_ROWS && col < SLOT_COLS) {
+        lawn_map[row][col].plant_type = 0;
+        lawn_map[row][col].remain_hp = 0;
+        // Need a function to clear the visual of the plant from the slot
+        // clear_plant_visual(row, col, hdmi_ctrl_ptr);
+    }
+}
+
+
+
+

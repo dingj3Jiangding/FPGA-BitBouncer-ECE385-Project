@@ -1,0 +1,10 @@
+#include "map.h"
+#include <stdint.h>
+slot_t lawn_map[32];
+
+void draw_map(BRAM_t* hdmi_ctrl){
+	for(int i = 0; i < 32; i++){
+		drawfunc_ptr draw_func = lawn_map[i].draw_func;
+		draw_func(i/8,i%8,BRAM_t* hdmi_ctrl);
+	}
+}

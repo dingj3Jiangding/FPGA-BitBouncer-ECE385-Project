@@ -1,0 +1,7 @@
+#include "game_timer.h"
+#include <xtmrctr.h>
+XTmrCtr game_timer;
+void game_timer_init(void){
+	XTmrCtr_Initialize(&game_timer, 0);
+	XTmrCtr_SetOptions(&game_timer, 0, u32 Options);
+}

@@ -1,0 +1,28 @@
+verilog xil_defaultlib --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ipshared/7698" --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ipshared/ec67/hdl" --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/clk_wiz_0" \
+"../../../bd/mb_lab7/ip/mb_lab7_clk_wiz_1_0/mb_lab7_clk_wiz_1_0_clk_wiz.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_clk_wiz_1_0/mb_lab7_clk_wiz_1_0.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_xbar_0/sim/mb_lab7_xbar_0.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_lmb_bram_0/sim/mb_lab7_lmb_bram_0.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/clk_wiz_0/clk_wiz_0_clk_wiz.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/clk_wiz_0/clk_wiz_0.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/hdmi_tx_0/hdl/encode.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/hdmi_tx_0/hdl/serdes_10_to_1.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/hdmi_tx_0/hdl/srldelay.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/hdmi_tx_0/hdl/hdmi_tx_v1_0.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/hdmi_tx_0/sim/hdmi_tx_0.v" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/blk_mem_gen_0/sim/blk_mem_gen_0.v" \
+
+sv xil_defaultlib --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ipshared/7698" --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ipshared/ec67/hdl" --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/clk_wiz_0" \
+"../../../bd/mb_lab7/ipshared/6017/src/Color_Mapper.sv" \
+"../../../bd/mb_lab7/ipshared/6017/src/VGA_controller.sv" \
+"../../../bd/mb_lab7/ipshared/6017/src/font_rom.sv" \
+"../../../bd/mb_lab7/ipshared/6017/src/hdmi_controller_v1_0_AXI.sv" \
+"../../../bd/mb_lab7/ipshared/6017/src/hdmi_controller_v1_0.sv" \
+"../../../bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/sim/mb_lab7_hdmi_controller_0_0.sv" \
+
+verilog xil_defaultlib --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ipshared/7698" --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ipshared/ec67/hdl" --include "../../../../final_project.gen/sources_1/bd/mb_lab7/ip/mb_lab7_hdmi_controller_0_0/src/clk_wiz_0" \
+"../../../bd/mb_lab7/sim/mb_lab7.v" \
+
+verilog xil_defaultlib "glbl.v"
+
+nosort

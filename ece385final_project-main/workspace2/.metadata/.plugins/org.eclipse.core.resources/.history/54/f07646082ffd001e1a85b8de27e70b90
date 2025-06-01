@@ -1,0 +1,317 @@
+#include <stdio.h>
+#include "../platform.h"
+#include "lw_usb/GenericMacros.h"
+#include "lw_usb/GenericTypeDefs.h"
+#include "lw_usb/MAX3421E.h"
+#include "lw_usb/USB.h"
+#include "lw_usb/usb_ch9.h"
+#include "lw_usb/transfer.h"
+#include "lw_usb/HID.h"
+#include "xintc.h"
+
+#include "xparameters.h"
+#include <xgpio.h>
+#include <xtmrctr.h>
+#include "map.h"
+#include "zombie.h"
+#include "plants.h"
+#include "time.h"
+#include "sleep.h"
+#include "game_timer.h"
+
+extern HID_DEVICE hid_device;
+
+static XGpio Gpio_hex;
+static XGpio Gpio_cursor;
+static XGpio Gpio_usb_int;
+XIntc Intc;
+
+static BYTE addr = 1; 				//hard-wired USB address
+const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mouse", " Mass storage" };
+
+static volatile struct BRAM_t* hdmi_ctrl = XPAR_HDMI_CONTROLLER_0_AXI_BASEADDR;
+
+extern XTmrCtr Usb_timer;
+
+uint8_t update_flag = 0;
+
+BYTE GetDriverandReport() {
+	BYTE i;
+	BYTE rcode;
+	BYTE device = 0xFF;
+	BYTE tmpbyte;
+
+	DEV_RECORD* tpl_ptr;
+	xil_printf("Reached USB_STATE_RUNNING (0x40)\n");
+	for (i = 1; i < USB_NUMDEVICES; i++) {
+		tpl_ptr = GetDevtable(i);
+		if (tpl_ptr->epinfo != NULL) {
+			xil_printf("Device: %d", i);
+			xil_printf("%s \n", devclasses[tpl_ptr->devclass]);
+			device = tpl_ptr->devclass;
+		}
+	}
+	//Query rate and protocol
+	rcode = XferGetIdle(addr, 0, hid_device.interface, 0, &tmpbyte);
+	if (rcode) {   //error handling
+		xil_printf("GetIdle Error. Error code: ");
+		xil_printf("%x \n", rcode);
+	} else {
+		xil_printf("Update rate: ");
+		xil_printf("%x \n", tmpbyte);
+	}
+	xil_printf("Protocol: ");
+	rcode = XferGetProto(addr, 0, hid_device.interface, &tmpbyte);
+	if (rcode) {   //error handling
+		xil_printf("GetProto Error. Error code ");
+		xil_printf("%x \n", rcode);
+	} else {
+		xil_printf("%d \n", tmpbyte);
+	}
+	return device;
+}
+
+void printHex (u32 data, unsigned channel)
+{
+	XGpio_DiscreteWrite (&Gpio_hex, channel, data);
+}
+static x = 0;
+
+//#define ROWS 480
+//#define COLUMNS 640
+//struct HDMI_STRUCT {
+//	uint8_t		      	VRAM [ROWS*COLUMNS/2];
+//};
+
+
+//void usb_int_hadler(void *CallbackRef){
+//	xil_printf("hello world hyh!\n");
+////	x = 1;
+////	XGpio *GpioPtr = (XGpio *)CallbackRef;
+////	XGpio_InterruptDisable(GpioPtr, XPAR_GPIO_USB_INT_IP2INTC_IRPT_MASK);
+////
+////	XGpio_InterruptClear(GpioPtr, XPAR_GPIO_USB_INT_IP2INTC_IRPT_MASK);
+////
+////	XGpio_InterruptEnable(GpioPtr, XPAR_GPIO_USB_INT_IP2INTC_IRPT_MASK);
+//
+//}
+//
+void timer_int_handler(void *CallbackRef, u8 CmrctrNumber){
+	update_flag = 1;
+	update_frame();
+}
+
+int main() {
+	int16_t cursor_x = 20;
+
+	int16_t cursor_y = 100;
+	init_platform();
+	XGpio_Initialize(&Gpio_hex, XPAR_GPIO_USB_KEYCODE_DEVICE_ID);
+	XGpio_SetDataDirection(&Gpio_hex, 1, 0x00000000); //configure hex display GPIO
+	XGpio_SetDataDirection(&Gpio_hex, 2, 0x00000000); //configure hex display GPIO
+
+
+
+	XGpio_Initialize(&Gpio_cursor, XPAR_AXI_GPIO_CURSOR_DEVICE_ID);
+	XGpio_SetDataDirection(&Gpio_cursor, 1, 0x00000000);
+	XGpio_SetDataDirection(&Gpio_cursor, 2, 0x00000000);
+
+	XGpio_Initialize(&Gpio_usb_int, XPAR_GPIO_USB_INT_DEVICE_ID);
+	XGpio_SetDataDirection(&Gpio_usb_int, 1, 0x00000000);
+
+
+//  Interrrupt control
+
+
+//	XIntc_Initialize(&Intc, XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID);
+//	int xint_status = XIntc_Connect(&Intc,XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID,(Xil_ExceptionHandler)usb_int_hadler,&Gpio_usb_int);
+//	if (xint_status == XST_SUCCESS) xil_printf("Connecting interrupt success.\n"); else xil_printf("Connecting interrupt failure.\n");
+//	XGpio_InterruptEnable(&Gpio_usb_int, XPAR_GPIO_USB_INT_IP2INTC_IRPT_MASK);
+//	XGpio_InterruptGlobalEnable(&Gpio_usb_int);
+//	XIntc_Enable(&Intc,XPAR_MICROBLAZE_0_AXI_INTC_GPIO_USB_INT_IP2INTC_IRPT_INTR);
+//	XIntc_Start(&Intc, XIN_REAL_MODE);
+
+
+//
+	init_zombie_map();
+//	generate_zombie();
+//	generate_zombie();
+
+
+
+
+
+
+   	BYTE rcode;
+	BOOT_MOUSE_REPORT buf;		//USB mouse report
+	BOOT_KBD_REPORT kbdbuf;
+
+	BYTE runningdebugflag = 0;//flag to dump out a bunch of information when we first get to USB_STATE_RUNNING
+	BYTE errorflag = 0; //flag once we get an error device so we don't keep dumping out state info
+	BYTE device;
+
+	xil_printf("initializing MAX3421E...\n");
+	MAX3421E_init();
+	xil_printf("initializing USB...\n");
+	USB_init();
+	uint8_t j = 0;
+
+	XTmrCtr_SetOptions(&Usb_timer,1,XTC_DOWN_COUNT_OPTION | XTC_AUTO_RELOAD_OPTION | XTC_INT_MODE_OPTION);
+	XTmrCtr_SetResetValue(&Usb_timer,1,8000000);
+	XTmrCtr_SetHandler(&Usb_timer,timer_int_handler,NULL);
+
+
+	XIntc_Initialize(&Intc, XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID);
+	int xint_status = XIntc_Connect(&Intc,XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR,(XInterruptHandler) XTmrCtr_InterruptHandler,&Usb_timer);
+	if (xint_status == XST_SUCCESS) xil_printf("Connecting interrupt success.\n"); else xil_printf("Connecting interrupt failure.\n");
+	XIntc_SetOptions(&Intc,XIN_SVC_ALL_ISRS_OPTION);
+	XIntc_Start(&Intc, XIN_REAL_MODE);
+	XIntc_Enable(&Intc,XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR);
+
+
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,(Xil_ExceptionHandler)XIntc_InterruptHandler, &Intc);
+	Xil_ExceptionEnable();
+
+
+	XTmrCtr_Start(&Usb_timer, 1);
+
+	game_timer_init();
+
+//	xil_printf("before %u ms\n",game_get_time_ms());
+//	sleep(10);
+//	xil_printf("after %u ms\n", game_get_time_ms());
+
+
+
+
+
+		u16 dir = -1;
+		while (1) {
+		XGpio_DiscreteWrite (&Gpio_cursor, 1, cursor_x);
+		XGpio_DiscreteWrite (&Gpio_cursor, 2, cursor_y);
+//		xil_printf("."); //A tick here means one loop through the USB main handler
+//		xil_printf("Timer 1 value %u\n",XTmrCtr_GetValue(&Usb_timer, 1));
+		MAX3421E_Task();
+		USB_Task();
+		draw_map(hdmi_ctrl);
+//		clear_zombie(&my_zombie, hdmi_ctrl);
+//		if(my_zombie.pos_x > 0 && my_zombie.pos_x < 639-ZOMBIE_WIDTH){
+//			my_zombie.pos_x+=dir;
+//		}else if(my_zombie.pos_x==0){
+//			dir = 1;
+//			my_zombie.pos_x+=dir;
+//		}else if(my_zombie.pos_x==639-ZOMBIE_WIDTH){
+//			dir = -1;
+//			my_zombie.pos_x+=dir;
+//		}
+//		draw_zombie(&my_zombie, hdmi_ctrl);
+//
+		if(update_flag){
+//			clear_zombie_map(hdmi_ctrl);
+			update_zombie_map();
+			update_pos();
+			update_flag = 0;
+		}
+
+		draw_zombie_map(hdmi_ctrl);
+
+		if (GetUsbTaskState() == USB_STATE_RUNNING) {
+			if (!runningdebugflag) {
+				runningdebugflag = 1;
+				device = GetDriverandReport();
+			} else if (device == 1) {
+				//run keyboard debug polling
+				rcode = kbdPoll(&kbdbuf);
+				if (rcode == hrNAK) {
+					continue; //NAK means no new data
+				} else if (rcode) {
+					xil_printf("Rcode: ");
+					xil_printf("%x \n", rcode);
+					continue;
+				}
+//				xil_printf("keycodes: ");
+//				for (int i = 0; i < 6; i++) {
+//					xil_printf("%x ", kbdbuf.keycode[i]);
+//				}
+				//Outputs the first 4 keycodes using the USB GPIO channel 1
+//				printHex (kbdbuf.keycode[0] + (kbdbuf.keycode[1]<<8) + (kbdbuf.keycode[2]<<16) + + (kbdbuf.keycode[3]<<24), 1);
+				//Modify to output the last 2 keycodes on channel 2.
+//				xil_printf("\n");
+				if(kbdbuf.keycode[0]==7){
+					if (cursor_x+15>639){
+						cursor_x=639;
+					}
+					else {
+						cursor_x+=15;
+					}
+
+				}
+				else if(kbdbuf.keycode[0]==26){
+					if (cursor_y-15<0){
+						cursor_y=0;
+					}
+					else {
+						cursor_y-=15;
+					}
+				}
+				else if(kbdbuf.keycode[0]==4){
+					if (cursor_x-15<0){
+						cursor_x=0;
+					}
+					else {
+						cursor_x-=15;
+					}
+				}
+				else if(kbdbuf.keycode[0]==22){
+					if (cursor_y+15>479){
+						cursor_y=479;
+					}
+					else {
+						cursor_y+=15;
+					}
+				}else if(kbdbuf.keycode[0]==30){
+					set_slot( (cursor_y - PLANT_OFFSET_Y)/90, (cursor_x - PLANT_OFFSET_X)/70,1,PEA_SHOOTER_HP);
+				}
+			}
+
+			else if (device == 2) {
+				rcode = mousePoll(&buf);
+				if (rcode == hrNAK) {
+					//NAK means no new data
+					continue;
+				} else if (rcode) {
+					xil_printf("Rcode: ");
+					xil_printf("%x \n", rcode);
+					continue;
+				}
+				xil_printf("X displacement: ");
+				xil_printf("%d ", (signed char) buf.Xdispl);
+				xil_printf("Y displacement: ");
+				xil_printf("%d ", (signed char) buf.Ydispl);
+				xil_printf("Buttons: ");
+				xil_printf("%x\n", buf.button);
+			}
+		} else if (GetUsbTaskState() == USB_STATE_ERROR) {
+			if (!errorflag) {
+				errorflag = 1;
+				xil_printf("USB Error State\n");
+				//print out string descriptor here
+			}
+		} else //not in USB running state
+		{
+
+			xil_printf("USB task state: ");
+			xil_printf("%x\n", GetUsbTaskState());
+			if (runningdebugflag) {	//previously running, reset USB hardware just to clear out any funky state, HS/FS etc
+				runningdebugflag = 0;
+				MAX3421E_init();
+				USB_init();
+			}
+			errorflag = 0;
+		}
+	}
+
+    cleanup_platform();
+	return 0;
+}

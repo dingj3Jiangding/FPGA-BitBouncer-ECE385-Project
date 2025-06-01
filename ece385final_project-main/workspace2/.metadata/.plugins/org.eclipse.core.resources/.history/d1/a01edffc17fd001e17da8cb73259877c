@@ -1,0 +1,6 @@
+#ifndef RAMDOM_H
+#define RAMODM_H
+
+uint32_t random_row()
+
+#endif

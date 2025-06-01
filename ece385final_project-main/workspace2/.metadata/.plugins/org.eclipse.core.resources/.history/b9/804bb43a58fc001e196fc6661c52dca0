@@ -1,0 +1,14 @@
+#include "map.h"
+#include "plants.h"
+#include <stdint.h>
+uint8_t lawn_map[32];
+
+void draw_map(BRAM_t* hdmi_ctrl){
+	for(int i = 0; i < 32; i++){
+		draw_plant(lawn_map[i],i/8,i%8);
+	}
+}
+
+void set_slot(uint8_t row, uint8_t col, uint8_t plant_type){
+
+}

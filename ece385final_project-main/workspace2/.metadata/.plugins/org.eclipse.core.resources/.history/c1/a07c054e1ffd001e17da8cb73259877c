@@ -1,0 +1,11 @@
+#include "game_timer.h"
+#include <xtmrctr.h>
+#include "xintc.h"
+XTmrCtr game_timer;
+
+void game_timer_init(void){
+	XTmrCtr_Initialize(&game_timer, 0);
+	XTmrCtr_SetOptions(&game_timer, 0, );
+
+	XIntc_Connect(&Intc,XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR,(XInterruptHandler) XTmrCtr_InterruptHandler,&Usb_timer)
+}

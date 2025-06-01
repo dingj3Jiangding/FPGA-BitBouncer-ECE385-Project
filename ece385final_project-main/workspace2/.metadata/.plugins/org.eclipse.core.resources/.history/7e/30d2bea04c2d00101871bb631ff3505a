@@ -1,0 +1,75 @@
+#ifndef MAP_H
+#define MAP_H
+
+#include <stdint.h>
+
+// === Screen & General Game Dimensions ===
+#define ROWS 480
+#define COLUMNS 640
+
+// === Slot & Grid Configuration ===
+#define SLOT_WIDTH 40
+#define SLOT_HEIGHT 120
+#define SLOT_COLS (COLUMNS / SLOT_WIDTH)  // Results in 16
+#define SLOT_ROWS (ROWS / SLOT_HEIGHT)    // Results in 4
+
+// === Obstacle Dimensions (from software/obs.h) ===
+// These are also defined in obs.h. Ensure they are consistent if not included from a single source.
+// For now, map.h needs them for SLOT_OBSTACLE calculations if any.
+#define OBS_WIDTH 10
+#define OBS_HEIGHT 30
+
+// === UI Digits for Sun Display ===
+#define DIGIT_OFFSET_X_1 46
+#define DIGIT_OFFSET_Y 55
+#define DIGIT_OFFSET_X_2 50
+#define DIGIT_OFFSET_X_3 54
+#define BG_BLACK 0x99
+#define BG_WHITE 0x11
+#define INIT_SUN 4
+
+// === BRAM Structure (Video RAM) ===
+// This is now the single authoritative definition of BRAM_t for the project.
+typedef struct BRAM_tag {
+    volatile uint8_t VRAM[ROWS * COLUMNS / 2];
+} BRAM_t;
+
+// === Slot Structure (Merged) ===
+typedef struct slot {
+    uint8_t plant_type;
+    int16_t remain_hp;
+    uint8_t under_attack;
+    uint32_t last_action_time;
+    uint8_t has_obs;          // For static obstacles
+} slot_t;
+
+// === Global Variables ===
+extern slot_t lawn_map[SLOT_ROWS][SLOT_COLS];
+extern uint8_t zombie_cnt;
+extern uint8_t win_game;
+extern uint8_t loss_game;
+
+// Forward declaration for player, if used by collision detection
+struct Player_animation;
+
+// === Function Prototypes ===
+
+// Initialization and Basic Map Operations
+void init_map(void);
+void set_slot(uint8_t row, uint8_t col, uint8_t plant_type, int16_t hp);
+void delete_slot(uint8_t row, uint8_t col, BRAM_t* hdmi_ctrl);
+void draw_map(BRAM_t* hdmi_ctrl);
+
+// Frame Update & Game State
+void update_frame(void);
+uint8_t check_loss(void);
+uint8_t check_win(void);
+
+
+
+// Obstacle Specific Functions
+void init_obstacles(BRAM_t* hdmi_ctrl); // Parameter name matches definition
+int check_obstacle_collision(int next_x, int next_y, struct Player_animation* current_player_frame);
+int has_obs_at(int x, int y);
+
+#endif // MAP_H

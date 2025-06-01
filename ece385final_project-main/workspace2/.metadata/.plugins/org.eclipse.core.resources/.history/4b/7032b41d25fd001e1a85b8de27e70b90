@@ -1,0 +1,32 @@
+#include "game_timer.h"
+#include <xtmrctr.h>
+#include <xintc.h>
+#include <xil_printf.h>
+
+XTmrCtr game_timer;
+extern XIntc Intc;
+uint32 timer_cnt;
+void game_timer_handler(void *CallbackRef, u8 CmrctrNumber){
+	xil_printf("Timer interrupt!\n");
+	timer_cnt++;
+}
+
+void game_timer_init(void){
+	 timer_cnt = 0;
+	XTmrCtr_Initialize(&game_timer, XPAR_AXI_TIMER_1_DEVICE_ID);
+	XTmrCtr_SetOptions(&game_timer, 0, XTC_AUTO_RELOAD_OPTION | XTC_INT_MODE_OPTION );
+
+	XIntc_Connect(&Intc,XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_1_INTERRUPT_INTR,(XInterruptHandler) XTmrCtr_InterruptHandler,&game_timer);
+	XTmrCtr_SetHandler(&game_timer,game_timer_handler,NULL);
+	XIntc_Enable(&Intc,XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_1_INTERRUPT_INTR);
+
+
+	XTmrCtr_Start(&game_timer, 0);
+}
+
+uint32_t game_get_time_ms(){
+	uint32_t tick = XTmrCtr_GetValue(&game_timer, 0);
+	uint32_t time_ms = tick / (XPAR_AXI_TIMER_1_CLOCK_FREQ_HZ/1000);
+	time_ms = timer_cnt * (tick / (XPAR_AXI_TIMER_1_CLOCK_FREQ_HZ/1000))
+
+}

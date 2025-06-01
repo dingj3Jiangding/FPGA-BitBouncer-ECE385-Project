@@ -1,0 +1,43 @@
+COMPILER=
+ARCHIVER=
+CP=cp
+COMPILER_FLAGS=
+EXTRA_COMPILER_FLAGS=
+LIB=libxil.a
+
+# Adjust these paths to match your project structure
+RELEASEDIR=../../../lib
+INCLUDEDIR=../../../include
+INCLUDES=-I./. -I${INCLUDEDIR}
+
+# Project specific includes - add your necessary include paths here
+PROJECT_INCLUDES=-I. -I../../include
+
+# List all your source files here
+LIBSOURCES= \
+    main.c \
+    player.c \
+    map.c \
+    game_timer.c \
+    platform.c
+
+# Generate object file list
+OBJECTS = $(addsuffix .o, $(basename $(LIBSOURCES)))
+
+# Executable name
+EXE = mb_final.elf
+
+# Default target
+all: $(EXE)
+
+# Linking rule
+$(EXE): $(OBJECTS)
+	$(COMPILER) -o $@ $(OBJECTS) -Wl,-T -Wl,../src/lscript.ld -L$(RELEASEDIR) -lxil -lgcc -lc
+
+# Compilation rule
+%.o: %.c
+	$(COMPILER) $(COMPILER_FLAGS) $(EXTRA_COMPILER_FLAGS) $(INCLUDES) $(PROJECT_INCLUDES) -c $< -o $@
+
+# Clean rule
+clean:
+	rm -rf $(OBJECTS) $(EXE)

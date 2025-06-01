@@ -1,0 +1,76 @@
+#include "buff.h"
+#include <stdlib.h>
+
+bool buff_slots[MAX_BUFF_SLOTS] = {false};
+
+
+static const uint8_t buff_img[BUFF_WIDTH * BUFF_HEIGHT] = {
+    0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,
+    0,0,1,1,1,1,0,0,0,0,1,1,1,1,0,0,
+    0,1,1,1,1,1,1,0,0,1,1,1,1,1,1,0,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+    0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+    0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,
+    0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,
+    0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,
+    0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0
+};
+
+void draw_buff(uint16_t x, uint16_t y, uint8_t color, BRAM_t* hdmi_ctrl) {
+    for (uint16_t j = 0; j < BUFF_HEIGHT; j++) {
+        for (uint16_t i = 0; i < BUFF_WIDTH; i++) {
+            uint8_t pixel = buff_img[j * BUFF_WIDTH + i];
+            if (pixel != 0) {
+                draw_pixel(x + i, y + j, color, hdmi_ctrl);
+            }
+        }
+    }
+}
+
+void clear_buff(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl) {
+    for (uint16_t j = 0; j < BUFF_HEIGHT; j++) {
+        for (uint16_t i = 0; i < BUFF_WIDTH; i++) {
+            uint8_t pixel = buff_img[j * BUFF_WIDTH + i];
+            if (pixel != 0) {
+                draw_pixel(x + i, y + j, 0, hdmi_ctrl);
+            }
+        }
+    }
+}
+
+void generate_buffs(const bool slot_has_obs[MAX_BUFF_SLOTS], BRAM_t* hdmi_ctrl) {
+    for (int i = 0; i < MAX_BUFF_SLOTS; i++) {
+        if (!slot_has_obs[i] && (rand() % BUFF_PROBABILITY == 0)) {
+            buff_slots[i] = true;
+
+            uint16_t px = i * 30 + 7;
+            uint16_t py = 300;
+            draw_buff(px, py, 0x07, hdmi_ctrl);
+        } else {
+            buff_slots[i] = false;
+        }
+    }
+}
+
+bool check_player_collect_buff(int player_x, BRAM_t* hdmi_ctrl) {
+    int slot_index = player_x / 30;
+    if (slot_index < 0 || slot_index >= MAX_BUFF_SLOTS) return false;
+
+    if (buff_slots[slot_index]) {
+        buff_slots[slot_index] = false;
+
+        uint16_t px = slot_index * 30 + 7;
+        uint16_t py = 400;
+        clear_buff(px, py, hdmi_ctrl);
+
+        return true;
+    }
+    return false;
+}

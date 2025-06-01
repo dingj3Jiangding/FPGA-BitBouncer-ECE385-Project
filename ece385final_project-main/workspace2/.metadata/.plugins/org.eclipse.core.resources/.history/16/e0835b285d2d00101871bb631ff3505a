@@ -1,0 +1,25 @@
+#ifndef BUFF_H
+#define BUFF_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "map.h"
+
+#define MAX_BUFF_SLOTS 21
+#define BUFF_PROBABILITY 30  // 概率越大 buff 越稀
+#define BUFF_WIDTH  16
+#define BUFF_HEIGHT 16
+
+extern bool buff_slots[MAX_BUFF_SLOTS];
+
+// 在无障碍的 slot 中生成 buff，并自动绘制图标
+void generate_buffs(const bool slot_has_obs[MAX_BUFF_SLOTS], BRAM_t* hdmi_ctrl);
+
+// 检查玩家是否吃到 buff，如果吃到自动清除图标
+bool check_player_collect_buff(int player_x, BRAM_t* hdmi_ctrl);
+
+// 单独绘制/清除图标（如需要）
+void draw_buff(uint16_t x, uint16_t y, uint8_t color, BRAM_t* hdmi_ctrl);
+void clear_buff(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl);
+
+#endif

@@ -1,0 +1,47 @@
+#ifndef PLAYER_H
+#define PLAYER_H
+
+#include <stdint.h>
+#include "map.h"
+
+// Screen dimensions
+#define SCREEN_WIDTH 640
+#define SCREEN_HEIGHT 480
+
+// Ground level position (y-coordinate)
+#define GROUND_LEVEL (SCREEN_HEIGHT - 50)
+
+// Jump height (pixels above ground level)
+#define JUMP_HEIGHT 100
+
+// Dinosaur dimensions
+#define DINO_WIDTH 32
+#define DINO_HEIGHT 32
+
+// Animation speed control
+#define ANIMATION_SPEED 5  // Update every 5 frames
+
+// Player animation structure
+struct Player_animation {
+    uint8_t is_present;      // Whether the player is currently visible
+    uint16_t x;             // X position
+    uint16_t y;             // Y position
+    uint8_t direction;      // Direction (0 = right, 1 = left)
+    uint8_t jumping;        // Whether the player is currently jumping
+    struct Player_animation* fptr;  // Pointer to next frame in animation
+};
+
+// External reference to the dinosaur image array
+extern uint8_t player_img[];
+
+// Function declarations
+struct Player_animation* create_player_node(uint16_t x, uint16_t y, uint8_t direction, uint8_t jumping);
+struct Player_animation* create_run_animation(uint16_t start_x);
+struct Player_animation* create_jump_animation(uint16_t start_x);
+void free_animation(struct Player_animation* head);
+void draw_player(struct Player_animation* player, BRAM_t* hdmi_ctrl);
+struct Player_animation* update_and_draw_animation(struct Player_animation* current_frame, BRAM_t* hdmi_ctrl, int* frame_counter);
+struct Player_animation* handle_jump_input(int jump_button_pressed, struct Player_animation* current_frame, struct Player_animation* run_animation, struct Player_animation* jump_animation);
+void game_loop_example(void);
+
+#endif // PLAYER_H

@@ -1,0 +1,88 @@
+#ifndef MAP_H
+#define MAP_H
+
+#include <stdint.h>
+// If BRAM_t or other types are typically in platform.h for your project, you might need:
+// #include "platform.h"
+
+// === Screen & General Game Dimensions ===
+#define ROWS 480
+#define COLUMNS 640
+
+// === Slot & Grid Configuration (Adopted from software/map.h for obstacle integration) ===
+// Note: These were different from your original base map.h.
+// Base had: SLOT_HEIGHT 98, SLOT_WIDTH 76
+// Using software/map.h values:
+#define SLOT_WIDTH 40
+#define SLOT_HEIGHT 120
+#define SLOT_COLS (COLUMNS / SLOT_WIDTH)  // Results in 16
+#define SLOT_ROWS (ROWS / SLOT_HEIGHT)    // Results in 4
+
+// === Obstacle Dimensions (from software/obs.h) ===
+#define OBS_WIDTH 10
+#define OBS_HEIGHT 30
+
+// === UI Digits for Sun Display (from base map.h) ===
+#define DIGIT_OFFSET_X_1 46
+#define DIGIT_OFFSET_Y 55
+#define DIGIT_OFFSET_X_2 50
+#define DIGIT_OFFSET_X_3 54
+#define BG_BLACK 0x99
+#define BG_WHITE 0x11
+#define INIT_SUN 4
+
+// === BRAM Structure (Video RAM, from base map.h / obs.h) ===
+typedef struct BRAM {
+    uint8_t VRAM[ROWS * COLUMNS / 2]; // Each byte holds 2 pixels (4-bit per pixel)
+} BRAM_t;
+
+// === Slot Structure (Merged) ===
+typedef struct slot {
+    uint8_t plant_type;
+    int16_t remain_hp;
+    uint8_t under_attack;
+    uint32_t last_action_time;
+    uint8_t has_obs;          // <-- Added for static obstacles
+} slot_t;
+
+// === Global Variables ===
+extern slot_t lawn_map[SLOT_ROWS][SLOT_COLS]; // Changed to 2D
+extern uint8_t zombie_cnt; // From base map.c
+extern uint8_t win_game;   // From base map.c / software/map.c
+extern uint8_t loss_game;  // From base map.c / software/map.c
+
+// Forward declaration for player, if used by collision detection
+struct Player_animation; // Assuming player.h will be included where needed (e.g. map.c)
+
+// === Function Prototypes ===
+
+// Initialization and Basic Map Operations (from base map.h, adapted for 2D)
+void init_map(void);
+void set_slot(uint8_t row, uint8_t col, uint8_t plant_type, int16_t hp); // hp type changed to int16_t to match slot_t
+void delete_slot(uint8_t row, uint8_t col, BRAM_t* hdmi_ctrl); // Consider if this needs to clear static obstacles too
+void draw_map(BRAM_t* hdmi_ctrl); // Draws plants, may need update if obstacles are dynamic
+
+// Frame Update & Game State (some from base, some from software/map.h)
+void update_frame(void); // Definition seems to be drawing player
+uint8_t check_loss(void);
+uint8_t check_win(void);
+// void check_clear(BRAM_t* hdmi_ctrl); // From base map.h, keep if used
+
+// Plant/Combat Specific Functions (from base map.h)
+void generate_pea_bullet(void);
+
+// Sun Resource Management (from base map.h)
+void increase_sun(uint8_t value);
+uint8_t can_decrease_sun(uint8_t value);
+uint8_t decrease_sun(uint8_t value);
+uint8_t show_sun(void); // Assuming this returns current sun value
+uint8_t draw_sun_digit(uint8_t sun_value, BRAM_t* hdmi_ctrl);
+void clear_digit(BRAM_t* hdmi_ctrl);
+void update_digit(BRAM_t* hdmi_ctrl);
+
+// Obstacle Specific Functions (from software/map.h)
+void init_obstacles(BRAM_t* hdmi_ctrl);
+int check_obstacle_collision(int next_x, int next_y); // Specific to player collision
+int has_obs_at(int x, int y); // General query for obstacle at coordinate
+
+#endif // MAP_H

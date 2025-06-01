@@ -1,0 +1,46 @@
+#ifndef OBS_H
+#define OBS_H
+
+#include <stdint.h>
+#include "xil_types.h"  // For Xilinx-specific types like u8, u16
+
+// -------------------------
+// Obstacle Image Constants
+// -------------------------
+
+#define OBS_WIDTH 10
+#define OBS_HEIGHT 30
+#define COLUMNS 640
+#define ROWS 480
+
+
+// -------------------------
+// BRAM Controller Definition
+// -------------------------
+
+// Define the structure representing the HDMI VRAM interface
+typedef struct {
+    volatile uint8_t VRAM[640 * 480 / 2];  // Each byte holds 2 pixels (4-bit per pixel)
+} BRAM_t;
+
+// -------------------------
+// External Obstacle Data
+// -------------------------
+
+// External image data for the obstacle (16x16, 4-bit color per pixel)
+extern uint8_t obs_black_img[];
+
+// -------------------------
+// Drawing Functions
+// -------------------------
+
+// Draw a single pixel at (x, y) using a 4-bit color index
+void draw_pixel(uint16_t x, uint16_t y, uint8_t color, BRAM_t* hdmi_ctrl);
+
+// Draw the obstacle image at (x, y) using the image data
+void draw_static_obs(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl);
+
+// Clear the obstacle area at (x, y) by setting all pixels to transparent
+void clear_static_obs(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl);
+
+#endif // OBS_H

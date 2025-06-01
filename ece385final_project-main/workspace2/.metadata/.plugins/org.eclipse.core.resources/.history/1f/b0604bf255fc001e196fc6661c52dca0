@@ -1,0 +1,21 @@
+#ifndef MAP_H
+#define MAP_H
+
+#include <stdint.h>
+
+typedef void (*drawfunc_ptr)(void);
+
+typedef struct slot{
+	uint8_t plant_type;
+	drawfunc_ptr   draw_func;
+}slot_t;
+
+
+#define ROWS 480
+#define COLUMNS 640
+typedef struct BRAM {
+	uint8_t VRAM [ROWS*COLUMNS];
+}BRAM_t;
+
+void draw_map(BRAM_t* hdmi_ctrl);
+#endif

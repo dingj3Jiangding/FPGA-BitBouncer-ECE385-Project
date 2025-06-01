@@ -1,0 +1,28 @@
+COMPILER=mb-gcc
+ARCHIVER=mb-ar
+CP=cp
+COMPILER_FLAGS=-Wall -O2
+EXTRA_COMPILER_FLAGS=-mlittle-endian -mxl-barrel-shift -mxl-pattern-compare -mno-xl-soft-mul -mcpu=v8.40.b -mno-xl-soft-div -mxl-multiply-high
+LIB=libxil.a
+
+RELEASEDIR=../../../lib
+INCLUDEDIR=../../../include
+INCLUDES=-I./. -I${INCLUDEDIR}
+
+INCLUDEFILES=$(wildcard *.h)
+LIBSOURCES=$(wildcard *.c)
+OUTS = $(wildcard *.o)
+OBJECTS = $(addsuffix .o, $(basename $(wildcard *.c)))
+
+
+libs:
+	echo "Compiling hdmi_text_controller..."
+	$(COMPILER) $(COMPILER_FLAGS) $(EXTRA_COMPILER_FLAGS) $(INCLUDES) $(LIBSOURCES)
+	$(ARCHIVER) -r ${RELEASEDIR}/${LIB} ${OBJECTS} ${ASSEMBLY_OBJECTS}
+	make clean
+
+include:
+	${CP} $(INCLUDEFILES) $(INCLUDEDIR)
+
+clean:
+	rm -rf ${OBJECTS} ${ASSEMBLY_OBJECTS}

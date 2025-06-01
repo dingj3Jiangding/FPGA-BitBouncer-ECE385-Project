@@ -1,0 +1,46 @@
+#ifndef OBS_H
+#define OBS_H
+
+#include <stdint.h>
+#include "xil_types.h"  // For Xilinx-specific types like u8, u16
+
+// -------------------------
+// Obstacle Image Constants
+// -------------------------
+
+#define OBS_WIDTH 10
+#define OBS_HEIGHT 30
+// COLUMNS and ROWS are also in map.h. Ensure consistency or include from a common source.
+// If map.h is always included before obs.h, these could be removed here if guarded.
+#ifndef COLUMNS
+    #define COLUMNS 640
+#endif
+#ifndef ROWS
+    #define ROWS 480
+#endif
+
+// -------------------------
+// BRAM Controller Definition
+// -------------------------
+
+// Standardized definition for BRAM_t
+// This should be the ONLY definition of BRAM_t across your project,
+// or included from a single common header (like platform.h or map.h if map.h is always primary).
+// To avoid redefinition if map.h is included first:
+
+
+// -------------------------
+// External Obstacle Data
+// -------------------------
+
+extern uint8_t statiobs_black_img[];
+
+// -------------------------
+// Drawing Functions
+// -------------------------
+
+void draw_pixel(uint16_t x, uint16_t y, uint8_t color, BRAM_t* hdmi_ctrl);
+void draw_static_obs(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl);
+void clear_static_obs(uint16_t x, uint16_t y, BRAM_t* hdmi_ctrl);
+
+#endif // OBS_H

@@ -1,0 +1,18 @@
+#ifndef MAP_H
+#define MAP_H
+
+#include <stdint.h>
+#define ROWS 480
+#define COLUMNS 640
+typedef struct slot{
+	uint8_t plant_type;
+	uint8_t remain_hp;
+}slot_t;
+typedef struct BRAM {
+	uint8_t VRAM [ROWS*COLUMNS];
+}BRAM_t;
+
+
+void set_slot(uint8_t row, uint8_t col, uint8_t plant_type);
+void draw_map(BRAM_t* hdmi_ctrl);
+#endif

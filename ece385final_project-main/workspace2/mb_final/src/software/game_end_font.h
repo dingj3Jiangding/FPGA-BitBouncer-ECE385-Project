@@ -1,0 +1,41 @@
+#ifndef GAME_END_FONT_H
+#define GAME_END_FONT_H
+
+#include <stdint.h>
+#include "map.h"
+
+// Font dimensions (scaled to be visible)
+#define FONT_WIDTH  8   // Original character width in pixels
+#define FONT_HEIGHT 16  // Original character height in pixels
+#define CHAR_WIDTH  32  // Width of a character space (including spacing)
+#define CHAR_HEIGHT 64  // Height of a character space (4x scaling)
+
+// Font color
+#define FONT_COLOR  0x77  // Red color
+
+// Character indices
+#define CHAR_A 0
+#define CHAR_B 1
+#define CHAR_C 2
+#define CHAR_E 3
+#define CHAR_H 4
+#define CHAR_I 5
+#define CHAR_M 6
+#define CHAR_N 7
+#define CHAR_O 8
+#define CHAR_R 9
+#define CHAR_S 10
+#define CHAR_T 11
+#define CHAR_U 12
+#define CHAR_V 13
+#define CHAR_Y 14
+#define CHAR_Z 15
+#define CHAR_SUPRISE 16
+#define CHAR_D 17
+
+// Function prototypes
+void draw_chrarcter(uint16_t x, uint16_t y, uint8_t char_id, BRAM_t* hdmi_ctrl);
+void draw_game_loss(BRAM_t* hdmi_ctrl);
+void draw_game_victory(BRAM_t* hdmi_ctrl);
+
+#endif // GAME_END_FONT_H

@@ -1,0 +1,15 @@
+#ifndef MAP_H
+#define MAP_H
+
+#include <stdint.h>
+
+typedef struct slot{
+	uint8_t plant_type;
+	void*   draw_func;
+}slot_t;
+
+
+draw_map(){
+
+}
+#endif

@@ -1,0 +1,479 @@
+#include <stdio.h>
+#include "../platform.h"
+#include "lw_usb/GenericMacros.h"
+#include "lw_usb/GenericTypeDefs.h"
+#include "lw_usb/MAX3421E.h"
+#include "lw_usb/USB.h"
+#include "lw_usb/usb_ch9.h"
+#include "lw_usb/transfer.h"
+#include "lw_usb/HID.h"
+#include "xintc.h"
+
+#include "xparameters.h"
+#include <xgpio.h>
+#include <xtmrctr.h>
+#include "map.h"
+#include "player.h"
+#include "time.h"
+#include "sleep.h"
+#include "game_timer.h"
+
+extern HID_DEVICE hid_device;
+
+// GPIO and Interrupt Controller
+static XGpio Gpio_hex;
+static XGpio Gpio_cursor;
+static XGpio Gpio_usb_int;
+XIntc Intc;
+
+// USB settings
+static BYTE addr = 1;  // Hard-wired USB address
+const char* const devclasses[] = { " Uninitialized", " HID Keyboard", " HID Mouse", " Mass storage" };
+
+// Display controller
+static volatile BRAM_t* hdmi_ctrl = XPAR_HDMI_CONTROLLER_0_AXI_BASEADDR;
+
+// Player animation structures
+struct Player_animation* run_animation_right;
+struct Player_animation* jump_animation_right;
+struct Player_animation* run_animation_left;
+struct Player_animation* jump_animation_left;
+struct Player_animation* current_frame;
+
+// Timer - Use extern to access the timer defined in MAX3421E.c
+extern XTmrCtr Usb_timer;
+
+// Animation state
+int frame_counter = 0;
+uint8_t update_flag = 0;
+
+// Player state
+// Initial position at left bottom of the screen
+int16_t player_x = 50;  // A bit offset from the very left edge
+int16_t player_y = GROUND_LEVEL - DINO_HEIGHT - 1;
+uint8_t player_direction = 0;  // 0 = right, 1 = left
+uint8_t jumping = 0;
+uint8_t jump_requested = 0;
+
+// Movement speed
+const int MOVE_SPEED = 3;
+
+// Direct key detection - store actual key values from USB report
+uint8_t last_keys[6] = {0};
+uint8_t w_key_detected = 0;
+
+/**
+ * Timer interrupt handler for animation updates
+ */
+void timer_int_handler(void *CallbackRef, u8 TmrCtrNumber) {
+    update_flag = 1;
+
+    // Handle all keys in the same way - check last_keys array directly
+    int move_left = 0;
+    int move_right = 0;
+    int move_jump = 0;
+
+    for (int i = 0; i < 6; i++) {
+        if (last_keys[i] == 4) { // A key
+            move_left = 1;
+        }
+        else if (last_keys[i] == 7) { // D key
+            move_right = 1;
+        }
+        else if (last_keys[i] == 26) { // W key - process it the same way!
+            move_jump = 1;
+        }
+    }
+
+    // Process jump exactly like left/right movement
+    if (move_jump && !jumping) {
+        jump_requested = 1;
+        xil_printf("Jump requested from W key\n");
+    }
+
+    // Update direction based on left/right
+    if (move_left && !move_right) {
+        player_direction = 1; // Left
+    }
+    else if (move_right && !move_left) {
+        player_direction = 0; // Right
+    }
+
+    // Handle actual movement
+    if (move_left && !move_right && player_x > MOVE_SPEED) {
+        player_x -= MOVE_SPEED;
+    }
+    else if (move_right && !move_left && player_x < SCREEN_WIDTH - DINO_WIDTH - MOVE_SPEED) {
+        player_x += MOVE_SPEED;
+    }
+
+    // Update positions in all animation frames
+    if (run_animation_right) {
+        update_all_animation_positions(run_animation_right, player_x, 0, player_direction);
+    }
+    if (run_animation_left) {
+        update_all_animation_positions(run_animation_left, player_x, 0, player_direction);
+    }
+    if (jump_animation_right) {
+        update_all_animation_positions(jump_animation_right, player_x, 0, player_direction);
+    }
+    if (jump_animation_left) {
+        update_all_animation_positions(jump_animation_left, player_x, 0, player_direction);
+    }
+}
+
+/**
+ * Get USB driver details
+ */
+BYTE GetDriverandReport() {
+    BYTE i;
+    BYTE rcode;
+    BYTE device = 0xFF;
+    BYTE tmpbyte;
+
+    DEV_RECORD* tpl_ptr;
+    xil_printf("Reached USB_STATE_RUNNING (0x40)\n");
+    for (i = 1; i < USB_NUMDEVICES; i++) {
+        tpl_ptr = GetDevtable(i);
+        if (tpl_ptr->epinfo != NULL) {
+            xil_printf("Device: %d - %s\n", i, devclasses[tpl_ptr->devclass]);
+            device = tpl_ptr->devclass;
+        }
+    }
+
+    // Query rate and protocol
+    rcode = XferGetIdle(addr, 0, hid_device.interface, 0, &tmpbyte);
+    if (rcode) {
+        xil_printf("GetIdle Error. Error code: %x\n", rcode);
+    } else {
+        xil_printf("Update rate: %x\n", tmpbyte);
+    }
+
+    rcode = XferGetProto(addr, 0, hid_device.interface, &tmpbyte);
+    if (rcode) {
+        xil_printf("GetProto Error. Error code: %x\n", rcode);
+    } else {
+        xil_printf("Protocol: %d\n", tmpbyte);
+    }
+    return device;
+}
+
+/**
+ * Print hexadecimal values to GPIO display
+ */
+void printHex(u32 data, unsigned channel) {
+    XGpio_DiscreteWrite(&Gpio_hex, channel, data);
+}
+
+/**
+ * Draw ground line
+ */
+void draw_ground() {
+    for (int x = 0; x < SCREEN_WIDTH; x+=2) {
+    	uint32_t byte_pos = GROUND_LEVEL * (SCREEN_WIDTH/2) + (x/2);
+    	if(x < SCREEN_WIDTH - 1){
+    		hdmi_ctrl->VRAM[byte_pos] = 0x55; // Gray ground
+    	}
+
+    }
+}
+
+/**
+ * Process WASD keyboard input and update player state
+ * This function now checks for the W key directly in the report
+ */
+void process_keyboard_input(BOOT_KBD_REPORT* kbd) {
+    // Save current value to detect edge (key press)
+    uint8_t prev_w_detected = w_key_detected;
+
+    // Reset detection
+    w_key_detected = 0;
+
+    // First clear all previous keys
+    for (int i = 0; i < 6; i++) {
+        last_keys[i] = 0;
+    }
+
+    // Then copy new keys
+    for (int i = 0; i < 6; i++) {
+        last_keys[i] = kbd->keycode[i];
+
+        // Check for W key (code 26)
+        if (kbd->keycode[i] == 26) {
+            w_key_detected = 1;
+            // Only log if this is a new W key press
+            if (!prev_w_detected) {
+                xil_printf("W key detected! Direction=%d\n", player_direction);
+            }
+        }
+
+        // Print all key codes for debugging
+        if (kbd->keycode[i] != 0) {
+            xil_printf("Key code[%d]: %d\n", i, kbd->keycode[i]);
+        }
+    }
+
+    // Update cursor for debugging
+    XGpio_DiscreteWrite(&Gpio_cursor, 1, player_x);
+    XGpio_DiscreteWrite(&Gpio_cursor, 2, player_y);
+
+    // Display keycodes for debugging
+    printHex(kbd->keycode[0] + (kbd->keycode[1]<<8) +
+           (kbd->keycode[2]<<16) + (kbd->keycode[3]<<24), 1);
+}
+
+/**
+ * Initialize the screen
+ */
+//void init_screen() {
+//    // Clear the entire screen to black
+//    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+//        for (int x = 0; x < SCREEN_WIDTH; x++) {
+//            hdmi_ctrl->VRAM[y * SCREEN_WIDTH + x] = 0x00;
+//        }
+//    }
+//
+//    // Draw the ground line at the bottom of the screen
+//    draw_ground_line(hdmi_ctrl);
+//}
+
+int main() {
+    init_platform();
+
+    xil_printf("Dinosaur WASD Control Demo\n");
+
+    // Initialize GPIO for hex display
+    XGpio_Initialize(&Gpio_hex, XPAR_GPIO_USB_KEYCODE_DEVICE_ID);
+    XGpio_SetDataDirection(&Gpio_hex, 1, 0x00000000);
+    XGpio_SetDataDirection(&Gpio_hex, 2, 0x00000000);
+
+    // Initialize GPIO for cursor display
+    XGpio_Initialize(&Gpio_cursor, XPAR_AXI_GPIO_CURSOR_DEVICE_ID);
+    XGpio_SetDataDirection(&Gpio_cursor, 1, 0x00000000);
+    XGpio_SetDataDirection(&Gpio_cursor, 2, 0x00000000);
+
+    // Initialize GPIO for USB interrupt
+    XGpio_Initialize(&Gpio_usb_int, XPAR_GPIO_USB_INT_DEVICE_ID);
+    XGpio_SetDataDirection(&Gpio_usb_int, 1, 0x00000000);
+
+    // Initialize game map
+    init_map();
+
+    // Initialize animation structures with the player at left bottom of screen
+    player_x = 50;  // Left side of screen
+    player_y = GROUND_LEVEL - DINO_HEIGHT;  // Bottom position (accounting for dinosaur height)
+
+    run_animation_right = create_run_animation(player_x);
+    jump_animation_right = create_jump_animation(player_x);
+
+    // Create left-facing animations
+    run_animation_left = create_run_animation(player_x);
+    jump_animation_left = create_jump_animation(player_x);
+
+    // Set direction for left animations
+    update_all_animation_positions(run_animation_left, player_x, player_y, 1);
+    update_all_animation_positions(jump_animation_left, player_x, player_y, 1);
+
+    // Start with right-facing run animation
+    current_frame = run_animation_left;
+
+    // USB variables
+    BYTE rcode;
+    BOOT_KBD_REPORT kbdbuf;
+    BYTE running_flag = 0;
+    BYTE device;
+
+    // Initialize USB subsystem
+    xil_printf("Initializing MAX3421E...\n");
+    MAX3421E_init();
+    xil_printf("Initializing USB...\n");
+    USB_init();
+
+    // Configure USB timer (already initialized in MAX3421E.c)
+    // Set a faster timer rate for more responsive controls
+    XTmrCtr_SetOptions(&Usb_timer, 1, XTC_DOWN_COUNT_OPTION | XTC_AUTO_RELOAD_OPTION | XTC_INT_MODE_OPTION);
+
+    // *** EVEN FASTER TIMER INTERVAL FOR MORE FREQUENT INTERRUPTS ***
+    // Current value is 800000, make it even faster
+    XTmrCtr_SetResetValue(&Usb_timer, 1, 1600000); // Make it twice as fast as current setting
+
+    XTmrCtr_SetHandler(&Usb_timer, timer_int_handler, NULL);
+
+    // Initialize interrupt controller
+    XIntc_Initialize(&Intc, XPAR_MICROBLAZE_0_AXI_INTC_DEVICE_ID);
+
+    // Connect timer interrupt
+    int status = XIntc_Connect(&Intc,
+                              XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR,
+                              (XInterruptHandler)XTmrCtr_InterruptHandler,
+                              &Usb_timer);
+
+    if (status == XST_SUCCESS) {
+        xil_printf("Connecting timer interrupt success.\n");
+    } else {
+        xil_printf("Connecting timer interrupt failure.\n");
+    }
+
+    // Initialize interrupt controller
+    XIntc_SetOptions(&Intc, XIN_SVC_ALL_ISRS_OPTION);
+    XIntc_Start(&Intc, XIN_REAL_MODE);
+    XIntc_Enable(&Intc, XPAR_MICROBLAZE_0_AXI_INTC_AXI_TIMER_0_INTERRUPT_INTR);
+
+    // Set up exception handling
+    Xil_ExceptionInit();
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+                               (Xil_ExceptionHandler)XIntc_InterruptHandler,
+                               &Intc);
+    Xil_ExceptionEnable();
+
+    // Start timer
+    XTmrCtr_Start(&Usb_timer, 1);
+
+    // Initialize game timer (for game logic timing)
+    game_timer_init();
+
+    // Reset the player drawing state
+    reset_player_drawing();
+
+    // Main loop
+    while (1) {
+        // Update cursor display (for debugging)
+        XGpio_DiscreteWrite(&Gpio_cursor, 1, player_x);
+        XGpio_DiscreteWrite(&Gpio_cursor, 2, player_y);
+
+        // Handle USB tasks
+        MAX3421E_Task();
+        USB_Task();
+
+        // USB keyboard handling
+        if (GetUsbTaskState() == USB_STATE_RUNNING) {
+            if (!running_flag) {
+                running_flag = 1;
+                xil_printf("USB device running.\n");
+                device = GetDriverandReport();
+            } else if (device == 1) {  // HID Keyboard
+                // CRITICAL FIX: Check current key state before polling
+                uint8_t was_w_detected = w_key_detected;
+
+                // Poll keyboard for input
+                rcode = kbdPoll(&kbdbuf);
+
+                // Process any key input immediately, even NAK
+                if (rcode != hrSUCCESS && rcode != hrNAK) {
+                    xil_printf("Keyboard error code: %x\n", rcode);
+                } else {
+                    // Print raw keycodes for debugging - only for non-empty reports
+                    if (kbdbuf.keycode[0] != 0) {
+                        xil_printf("Raw keycodes: ");
+                        for (int i = 0; i < 6; i++) {
+                            if (kbdbuf.keycode[i] != 0) {
+                                xil_printf("%d ", kbdbuf.keycode[i]);
+                            }
+                        }
+                        xil_printf("\n");
+                    }
+
+                    // Process WASD keyboard input
+                    process_keyboard_input(&kbdbuf);
+
+                    // CRITICAL FIX: Force jump request immediately when W is detected
+                    // This ensures W key detection isn't missed between timer interrupts
+                    if (w_key_detected && !was_w_detected && !jumping) {
+                        jump_requested = 1;
+                        xil_printf("Jump requested directly from keyboard polling\n");
+                    }
+                }
+
+                // Try polling again immediately for better key detection
+                rcode = kbdPoll(&kbdbuf);
+                if (rcode == hrSUCCESS) {
+                    process_keyboard_input(&kbdbuf);
+                }
+            }
+        } else if (GetUsbTaskState() == USB_STATE_ERROR) {
+            xil_printf("USB Error\n");
+            running_flag = 0;
+            MAX3421E_init();
+            USB_init();
+        } else {
+            // Not in USB running state
+            xil_printf("USB task state: %x\n", GetUsbTaskState());
+            if (running_flag) {
+                running_flag = 0;
+                MAX3421E_init();
+                USB_init();
+            }
+        }
+
+        // Frame update (controlled by timer interrupt)
+        if (update_flag) {
+            // Print debug information
+            xil_printf("Animation update: dir=%d, jumping=%d, jump_req=%d\n",
+                      player_direction, jumping, jump_requested);
+
+            // CRITICAL FIX: Handle jumping immediately
+            if (jump_requested && !jumping) {
+                jumping = 1;
+                jump_requested = 0;  // Reset the request flag
+
+                // Force animation selection based on current direction
+                if (player_direction == 0) {
+                    current_frame = jump_animation_right;
+                    xil_printf("Selected right jump animation\n");
+                } else {
+                    current_frame = jump_animation_left;
+                    xil_printf("Selected left jump animation\n");
+                }
+                xil_printf("Jumping!\n");
+            }
+
+            // If not jumping, use run animation based on current direction
+            if (!jumping) {
+                if (player_direction == 0) {
+                    current_frame = run_animation_right;
+                } else {
+                    current_frame = run_animation_left;
+                }
+            }
+
+            // CRITICAL: Update and draw with additional error checking
+            if (current_frame != NULL) {
+                current_frame = update_and_draw_animation(
+                    current_frame,
+                    hdmi_ctrl,
+                    &frame_counter
+                );
+            } else {
+                xil_printf("ERROR: current_frame is NULL!\n");
+            }
+
+            // Check if jump animation completed
+            if (jumping && current_frame != NULL && !current_frame->jumping) {
+                jumping = 0;
+                xil_printf("Jump completed\n");
+
+                // Select correct run animation
+                if (player_direction == 0) {
+                    current_frame = run_animation_right;
+                } else {
+                    current_frame = run_animation_left;
+                }
+            }
+
+            // Make sure ground line is always visible
+            draw_ground();
+
+            // IMPORTANT: Reset update flag
+            update_flag = 0;
+        }
+    }
+
+    // This point is never reached in the demo
+    free_animation(run_animation_right);
+    free_animation(jump_animation_right);
+    free_animation(run_animation_left);
+    free_animation(jump_animation_left);
+
+    cleanup_platform();
+    return 0;
+}

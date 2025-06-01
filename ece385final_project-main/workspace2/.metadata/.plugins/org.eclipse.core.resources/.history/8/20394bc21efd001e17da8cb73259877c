@@ -1,0 +1,6 @@
+#include "game_timer.h"
+#include <xtmrctr.h>
+
+void game_timer_init(){
+
+}
